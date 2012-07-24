@@ -5,7 +5,7 @@
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 
-
+#include <stdint.h>
 #include <iostream>
 #include <iomanip>
 #include <vector>
@@ -23,6 +23,10 @@ using namespace std;
 // 1024x768 Beamer resolution
 const int BEAMER_MAX_X = 1024;
 const int BEAMER_MAX_Y = 768;
+
+// Sandbox constants
+const int MAX_SAND_DEPTH_IN_MM = 90;
+const int MAX_SAND_HEIGHT_IN_MM = 200;
 
 
 
@@ -244,6 +248,77 @@ bool getHomography(VideoCapture &capture, Mat &homography)
 	return true;
 }
 
+bool getDepthCorrection(VideoCapture &capture, Mat &homography, unsigned short &boxBottomMM)
+{
+	if(!capture.grab())
+		return false;
+
+	Mat rawDepthInMM;
+	if(!capture.retrieve(rawDepthInMM, CV_CAP_OPENNI_DEPTH_MAP))
+		return false;
+
+	Mat depthWarpedInMM;
+	warpPerspective(rawDepthInMM, depthWarpedInMM, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
+	
+	uint64_t val = 0;
+	unsigned int num = 0;
+	// Sample a few points to estimate ground level
+	for (int x = 0; x < BEAMER_MAX_X; x += BEAMER_MAX_X/16)
+	{
+		for (int y = 0; y < BEAMER_MAX_Y; y += BEAMER_MAX_Y/16)
+		{
+			val += depthWarpedInMM.at<unsigned short>(Point(x,y));
+			++num;
+		}
+	}
+
+	val = val / num;
+	cout << "Sandbox ground level estimated at: " << val << endl;
+	val += MAX_SAND_DEPTH_IN_MM;
+	cout << "Sandbox deepest stop estimated at: " << val << endl;
+	
+	boxBottomMM = static_cast<unsigned short>(val);
+
+	//TODO: Perspective correction doesn't help with 3D issues. Should use 4 edge points for reconstructing 3d base plane but that can wait.
+
+	// Create depth correction as level
+	//Mat baseLayer = Mat(BEAMER_MAX_X, BEAMER_MAX_Y, depthWarpedInMM.type(), val); // Idealized sandbox base
+	//cv::subtract(baseLayer, depthWarpedInMM, depthCorrection);
+	return true;
+}
+
+bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, unsigned short boxBottomMM)
+{
+	const size_t rows = depthWarped.rows;
+	const size_t cols = depthWarped.cols;
+	depthWarpedNormalized = Mat(rows, cols, depthWarped.type());
+
+	const uint16_t topOrig = boxBottomMM - MAX_SAND_DEPTH_IN_MM - MAX_SAND_HEIGHT_IN_MM;
+	const uint16_t range = boxBottomMM - topOrig;
+
+	for (size_t row = 0; row < rows; ++row)
+	{
+		for (size_t col = 0; col < cols; ++col)
+		{
+			uint16_t val = depthWarped.at<uint16_t>(Point(col, row));
+			// Clip
+			if (val > boxBottomMM) val = boxBottomMM;
+			else if (val < topOrig) val = topOrig;
+
+			// Shift and invert
+			val = boxBottomMM - val;
+
+			// Scale and save
+			const uint16_t fac = numeric_limits<uint16_t>::max() / range;
+			const uint16_t color = val * fac;
+			depthWarpedNormalized.at<uint16_t>(Point(col, row)) = color;
+		}
+	}
+
+
+	return true;
+}
+
 //
 // Snippets
 //
@@ -263,6 +338,10 @@ int main( int argc, char* argv[] )
 
 	Mat homography;
 	if(!getHomography(capture, homography))
+		return 1;
+
+	unsigned short boxBottomMM;
+	if(!getDepthCorrection(capture, homography, boxBottomMM))
 		return 1;
 
 	const std::string BGR_IMAGE = "Bgr Image";
@@ -307,14 +386,12 @@ int main( int argc, char* argv[] )
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
 
-		Mat dst_norm;
-		Mat dst_norm_scaled;
-		normalize( depthWarped, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
-		convertScaleAbs( dst_norm, dst_norm_scaled );
+		Mat depthWarpedNormalized;
+		sandboxNormalize(depthWarped, depthWarpedNormalized, boxBottomMM);
 
-		Mat no;
-		bitwise_not(dst_norm_scaled, no);
-		imshow("test", no);
+		imshow("sandnorm", depthWarpedNormalized);
+		//unsigned short centerval = depthWarped.at<unsigned short>(Point(BEAMER_MAX_X/2, BEAMER_MAX_Y/2));
+		//cout << centerval << endl;
 
 		imshow(BGR_WARPED, bgrWarped);
 		imshow(DEPTH_WARPED, depthWarped);
