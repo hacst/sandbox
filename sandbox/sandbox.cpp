@@ -307,6 +307,15 @@ int main( int argc, char* argv[] )
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
 
+		Mat dst_norm;
+		Mat dst_norm_scaled;
+		normalize( depthWarped, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
+		convertScaleAbs( dst_norm, dst_norm_scaled );
+
+		Mat no;
+		bitwise_not(dst_norm_scaled, no);
+		imshow("test", no);
+
 		imshow(BGR_WARPED, bgrWarped);
 		imshow(DEPTH_WARPED, depthWarped);
 		imshow(BGR_IMAGE, bgrImage);
