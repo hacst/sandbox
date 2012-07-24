@@ -5,14 +5,26 @@
 #include <opencv/cv.h>
 #include <opencv/highgui.h>
 
+
 #include <iostream>
 #include <iomanip>
 #include <vector>
+#include <algorithm>
 
 #include <sstream>
 
 using namespace cv;
 using namespace std;
+
+//
+//-- Constants
+//
+
+// 1024x768 Beamer resolution
+const int BEAMER_MAX_X = 1024;
+const int BEAMER_MAX_Y = 768;
+
+
 
 static void colorizeDisparity( const Mat& gray, Mat& rgb, double maxDisp=-1.f, float S=1.f, float V=1.f )
 {
@@ -130,6 +142,26 @@ bool grabAndStore(VideoCapture &capture, const std::string &prefix = std::string
 	return true;
 }
 
+bool grabAndStoreMany(VideoCapture &capture, const int n = 30, const std::string &prefix = std::string())
+{
+	for (int i = 0; i < n; ++i)
+	{
+		cout << "Snap " << i << endl;
+		stringstream ss;
+		ss << prefix << i << "_";
+		if(!grabAndStore(capture, ss.str()))
+		{
+			cout << "Failed" << endl;
+			return false;
+		}
+
+		if( waitKey( 30 ) >= 0 )
+			return false;
+	}
+
+	return true;
+}
+
 
 
 void calibrationMouseClickHandler(int event, int x, int y, int flags, void* ptr)
@@ -145,7 +177,7 @@ void calibrationMouseClickHandler(int event, int x, int y, int flags, void* ptr)
 bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &calibPoints)
 {
 	calibPoints.clear();
-	const std::string CALIB_BGR_WND = "Calibration (please click the edges of the beamer area)";
+	const std::string CALIB_BGR_WND = "Calibration (please click the edges of the beamer area clockwise starting top left)";
 
 	namedWindow(CALIB_BGR_WND, CV_WINDOW_KEEPRATIO);
 	setMouseCallback(CALIB_BGR_WND, calibrationMouseClickHandler, &calibPoints);
@@ -192,7 +224,30 @@ bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f>
 	return true;
 }
 
+bool getHomography(VideoCapture &capture, Mat &homography)
+{
+	vector<Point2f> calibPoints;
+	if(!getManualCalibrationRectangleCorners(capture, calibPoints))
+	{
+		cerr << "Calibration failed" << endl;
+		return false;
+	}
+
+	vector<Point2f> realPoints;
+
+	realPoints.push_back(Point2f(0,0)); // Top left
+	realPoints.push_back(Point2f(BEAMER_MAX_X,0)); // Top right
+	realPoints.push_back(Point2f(BEAMER_MAX_X, BEAMER_MAX_Y)); // Bottom right
+	realPoints.push_back(Point2f(0, BEAMER_MAX_Y)); // Bottom left
+
+	homography = getPerspectiveTransform(calibPoints, realPoints);
+	return true;
+}
+
+//
 // Snippets
+//
+
 	/*if(!grabAndStore(capture))
 	{
 		cout << "Failed to store set of images" << endl;
@@ -206,40 +261,27 @@ int main( int argc, char* argv[] )
 	if (!initializeCapture(capture))
 		return 1;
 
-	vector<Point2f> calibPoints;
-	if(!getManualCalibrationRectangleCorners(capture, calibPoints))
-	{
-		cerr << "Calibration failed" << endl;
+	Mat homography;
+	if(!getHomography(capture, homography))
 		return 1;
-	}
 
 	const std::string BGR_IMAGE = "Bgr Image";
 	const std::string DEPTH_MAP = "Depth Map";
+	const std::string BGR_WARPED = "Warped BGR Image";
+	const std::string DEPTH_WARPED = "Warped Depth Image";
 
-	namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO);
-	namedWindow(DEPTH_MAP, CV_WINDOW_KEEPRATIO);
-
-
-
-	unsigned int n = 0;
-
-	int h = 0;
-	int s = 0;
-	int v = 0;
-	int h2 = 0;
-	int s2 = 0;
-	int v2 = 0;
-
-	bool first = true;
-
+	namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	namedWindow(DEPTH_MAP, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	namedWindow(BGR_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	namedWindow(DEPTH_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 
 
 	cout << "Enter mainloop" << endl;
+
 	for (;;)
 	{
 		Mat bgrImage;
 		Mat depthMap;
-		Mat lastBgr;
 
 		if (!capture.grab())
 		{
@@ -259,92 +301,23 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		createTrackbar("H", "mask", &h, 180, NULL, NULL);
-		createTrackbar("S", "mask", &s, 255, NULL, NULL);
-		createTrackbar("V", "mask", &v, 255, NULL, NULL);
-		createTrackbar("H2", "mask", &h2, 180, NULL, NULL);
-		createTrackbar("S2", "mask", &s2, 255, NULL, NULL);
-		createTrackbar("V2", "mask", &v2, 255, NULL, NULL);
+		Mat bgrWarped;		
+		warpPerspective(bgrImage, bgrWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
 
-		Scalar hsv_min = Scalar(h, s, v, 0);
-		Scalar hsv_max = Scalar(h2, s2, v2, 0);
+		Mat depthWarped;
+		warpPerspective(depthMap, depthWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
 
-		Mat hsvImage;
-		cvtColor(bgrImage, hsvImage,  CV_BGR2HSV);
-		Mat hsvMask;
-		inRange(hsvImage, hsv_min, hsv_max, hsvMask);
-		imshow("mask", hsvMask);
-
-		
-		Mat grey;
-		cvtColor(bgrImage, grey, CV_BGR2GRAY);
-		imshow("grey", grey);
-		Mat res;
-  
-		Mat bin;
-		threshold(grey, bin, 160, 255, CV_THRESH_BINARY);
-		imshow("bin", bin);
-
-
-		int blockSize = 2;
-		int apertureSize = 3;
-		double k = 0.04;
-
-		cornerHarris(bin, res, blockSize, apertureSize, k, BORDER_DEFAULT);
-		Mat dst_norm;
-		Mat dst_norm_scaled;
-		normalize( res, dst_norm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
-		convertScaleAbs( dst_norm, dst_norm_scaled );
-
-		int thresh = 200;
-
-		/// Drawing a circle around corners
-		int max = 0;
-		for( int j = 0; j < dst_norm.rows ; j++ )
-		{ for( int i = 0; i < dst_norm.cols; i++ )
-		{
-			if( (int) dst_norm.at<float>(j,i) > thresh )
-			{
-				circle( dst_norm_scaled, Point( i, j ), 5,  Scalar(0), 2, 8, 0 );
-				++max;
-				if (max > 20) {
-					cout << "oo" << endl;
-					break;
-				}
-			}
-		}
-		}
-
-		imshow("Harris", dst_norm_scaled);
-                    //Mat colorDisparityMap;
-                    //colorizeDisparity( depthMap, colorDisparityMap, getMaxDisparity(capture));
-                    //Mat validColorDisparityMap;
-                    //colorDisparityMap.copyTo( validColorDisparityMap, disparityMap != 0 );
-
+		imshow(BGR_WARPED, bgrWarped);
+		imshow(DEPTH_WARPED, depthWarped);
 		imshow(BGR_IMAGE, bgrImage);
 		imshow(DEPTH_MAP, depthMap);
 
-		stringstream ss;
-		ss << "recording/brimage" << n << ".png";
-		/*if(!imwrite(ss.str(), bgrImage))
-		{
-			cerr << "Failed to write " << ss.str() << endl;
-			return 1;
-		}
-		ss.str(string());
-		ss << "recording/dimage" << n << ".png";
-		if(!imwrite(ss.str(), depthMap))
-		{
-			cerr << "Failed to write " << ss.str() << endl;
-			return 1;
-		}*/
-		//uchar d = depthMap.data[(depthMap.rows / 2)  * depthMap.cols + depthMap.cols / 2];
-		//cout << (unsigned int)d << endl;
-		cout << (unsigned int) depthMap.at<ushort>(depthMap.rows/ 2, depthMap.cols/2) << endl;
-		++n;
-
-        if( waitKey( 30 ) >= 0 )
-            break;
+		if( waitKey( 30 ) >= 0 )
+			break;
 	}
+
 	return 0;
 }
+
+
+
