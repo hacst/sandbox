@@ -307,11 +307,11 @@ void calibrationMouseClickHandler(int event, int x, int y, int flags, void* ptr)
 bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &calibPoints)
 {
 	calibPoints.clear();
-	const std::string CALIB_BGR_WND = "Calibration (please click the edges of the beamer area clockwise starting top left)";
+	const std::string CALIB_BGR_WND = "Calibration";
 
 	namedWindow(CALIB_BGR_WND, CV_WINDOW_KEEPRATIO);
 	setMouseCallback(CALIB_BGR_WND, calibrationMouseClickHandler, &calibPoints);
-	//displayOverlay(CALIB_BGR_WND, "Please click the edges of the beamer area clockwise starting top left");
+	
 	cout << "Get calibration points" << endl;
 	while (calibPoints.size() < 4)
 	{
@@ -336,6 +336,7 @@ bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f>
 			circle(bgrImage, Point( it->x, it->y ), 5,  Scalar(0,0,255,0), 2, 8, 0 );
 		}
 
+		putText(bgrImage, "Please click the edges of the beamer area clockwise starting top left", Point(5,15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0,0,255,0));
 		imshow(CALIB_BGR_WND, bgrImage);
 
 		if( waitKey( 30 ) >= 0 )
@@ -415,9 +416,6 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 
 	//TODO: Perspective correction doesn't help with 3D issues. Should use 4 edge points for reconstructing 3d base plane but that can wait.
 
-	// Create depth correction as level
-	//Mat baseLayer = Mat(settings.beamerXres, settings.beamerYres, depthWarpedInMM.type(), val); // Idealized sandbox base
-	//cv::subtract(baseLayer, depthWarpedInMM, depthCorrection);
 	return true;
 }
 
@@ -462,17 +460,6 @@ bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint
 
 	return true;
 }
-
-//
-// Snippets
-//
-
-	/*if(!grabAndStore(capture))
-	{
-		cout << "Failed to store set of images" << endl;
-		return 1;
-	}*/
-
 
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
