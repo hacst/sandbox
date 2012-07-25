@@ -439,11 +439,10 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t box
 			uint16_t val = depthWarped.at<uint16_t>(Point(col, row));
 			// Clip
 			if (val > boxBottomDistanceInMM) val = boxBottomDistanceInMM;
-			else if (val < topOrig) val = topOrig;
+			else if (val < topOrig + 1) val = topOrig + 1;
 
 			// Shift and invert
 			val = boxBottomDistanceInMM - val;
-
 
 			if (colored)
 			{
