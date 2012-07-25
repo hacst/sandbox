@@ -421,11 +421,13 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
-bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat *colorBand = NULL)
+bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
 {
+	const bool colored = (colorBand.data != NULL);
+
 	const size_t rows = depthWarped.rows;
 	const size_t cols = depthWarped.cols;
-	depthWarpedNormalized = Mat(rows, cols, colorBand ? colorBand->type() : depthWarped.type());
+	depthWarpedNormalized = Mat(rows, cols, colored ? colorBand.type() : depthWarped.type());
 
 	const uint16_t topOrig = boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
 	const uint16_t range = boxBottomDistanceInMM - topOrig;
@@ -443,10 +445,10 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t box
 			val = boxBottomDistanceInMM - val;
 
 
-			if (colorBand)
+			if (colored)
 			{
 				// Apply color band
-				depthWarpedNormalized.at<cv::Vec3b>(Point(col, row)) = colorBand->at<cv::Vec3b>(Point(val, 0));
+				depthWarpedNormalized.at<cv::Vec3b>(Point(col, row)) = colorBand.at<cv::Vec3b>(Point(val, 0));
 			}
 			else
 			{
@@ -482,7 +484,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{d|depth|90|Maximum sand depth below plane in mm}"
 		"{t|top|200|Maximum sand height above plane in mm}"
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
-		"{c|colors|colorbands.png|Colorband to use for coloring.}"
+		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -517,6 +519,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 	settings.maxSandHeightInMM = clp.get<int>("t");
 
 	settings.colorFile = clp.get<std::string>("c");
+	if (settings.colorFile == "NONE") settings.colorFile.clear(); // No color file
 
 
 	if (!getMonitorRect(settings.monitor, settings.monitorRect))
@@ -536,6 +539,12 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 bool loadColorFile(const std::string &colorFile, Mat &colors)
 {
+	if (colorFile.empty()) {
+		cout << "No colorband given" << endl;
+		colors = Mat(); // Empty material
+		return true;
+	}
+
 	cout << "Loading color file " << colorFile << "..." << endl;
 
 	colors = cv::imread(colorFile, 1);
@@ -573,6 +582,11 @@ int main( int argc, char* argv[] )
 	Mat colors;
 	if (!loadColorFile(settings.colorFile, colors))
 		return 1;
+
+	if (colors.data == NULL)
+	{
+		cout << "Displaying continous grey scale" << endl;
+	}
 
 	VideoCapture capture;
 	if (!initializeCapture(capture))
@@ -642,7 +656,7 @@ int main( int argc, char* argv[] )
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		Mat depthWarpedNormalized;
-		sandboxNormalize(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, &colors);
+		sandboxNormalize(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 		//unsigned short centerval = depthWarped.at<unsigned short>(Point(settings.beamerXres/2, settings.beamerYres/2));
