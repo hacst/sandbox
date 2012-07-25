@@ -311,7 +311,7 @@ bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f>
 
 	namedWindow(CALIB_BGR_WND, CV_WINDOW_KEEPRATIO);
 	setMouseCallback(CALIB_BGR_WND, calibrationMouseClickHandler, &calibPoints);
-
+	//displayOverlay(CALIB_BGR_WND, "Please click the edges of the beamer area clockwise starting top left");
 	cout << "Get calibration points" << endl;
 	while (calibPoints.size() < 4)
 	{
@@ -333,7 +333,7 @@ bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f>
 			it != calibPoints.end();
 			++it)
 		{
-			circle(bgrImage, Point( it->x, it->y ), 5,  Scalar(0), 2, 8, 0 );
+			circle(bgrImage, Point( it->x, it->y ), 5,  Scalar(0,0,255,0), 2, 8, 0 );
 		}
 
 		imshow(CALIB_BGR_WND, bgrImage);
@@ -421,7 +421,7 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
-bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
+bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
 {
 	const bool colored = (colorBand.data != NULL);
 
@@ -655,16 +655,15 @@ int main( int argc, char* argv[] )
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		Mat depthWarpedNormalized;
-		sandboxNormalize(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
+		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
-		//unsigned short centerval = depthWarped.at<unsigned short>(Point(settings.beamerXres/2, settings.beamerYres/2));
-		//cout << centerval << endl;
 
-		imshow(BGR_WARPED, bgrWarped);
-		imshow(DEPTH_WARPED, depthWarped);
-		imshow(BGR_IMAGE, bgrImage);
-		imshow(DEPTH_MAP, depthMap);
+		cout << capture.get(CV_CAP_PROP_POS_MSEC) << endl;
+		//imshow(BGR_WARPED, bgrWarped);
+		//imshow(DEPTH_WARPED, depthWarped);
+		//imshow(BGR_IMAGE, bgrImage);
+		//imshow(DEPTH_MAP, depthMap);
 
 		if( waitKey( 30 ) >= 0 )
 			break;
