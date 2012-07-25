@@ -1,9 +1,7 @@
 #include "stdafx.h"
 
-#include "opencv2/highgui/highgui.hpp"
-#include "opencv2/imgproc/imgproc.hpp"
-#include <opencv/cv.h>
-#include <opencv/highgui.h>
+
+#include <opencv2/opencv.hpp>
 
 #include <stdint.h>
 #include <iostream>
@@ -419,6 +417,33 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
+/*
+bool normalizeAndScale(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM)
+{
+	const size_t rows = depthWarped.rows;
+	const size_t cols = depthWarped.cols;
+	depthWarpedNormalized = Mat(rows, cols, CV_8U);
+
+	const uint16_t topOrig = boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
+	const uint16_t range = boxBottomDistanceInMM - topOrig;
+
+	for (size_t row = 0; row < rows; ++row)
+	{
+		for (size_t col = 0; col < cols; ++col)
+		{
+			uint16_t val = depthWarped.at<uint16_t>(Point(col, row));
+			// Clip
+			if (val > boxBottomDistanceInMM) val = boxBottomDistanceInMM;
+			else if (val < topOrig + 1) val = topOrig + 1;
+
+			// Shift and invert
+			depthWarpedNormalized.at<uint8_t>(Point(col,row)) = static_cast<uint8_t>(boxBottomDistanceInMM - val);
+		}
+	}
+	return true;
+}*/
+
+
 bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
 {
 	const bool colored = (colorBand.data != NULL);
@@ -605,6 +630,11 @@ int main( int argc, char* argv[] )
 		}
 	}
 
+	Mat frameMask;
+	BackgroundSubtractorMOG2 bgs;
+	bgs.getBackgroundImage(frameMask);
+
+	Mat bgIm;
 
 	cout << "Enter mainloop" << endl;
 
@@ -636,6 +666,23 @@ int main( int argc, char* argv[] )
 
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
+
+		//Mat testd;
+		//normalizeAndScale(depthMap, testd, settings.boxBottomDistanceInMM);
+		//Mat testd;
+		//depthWarped.convertTo(testd, CV_8UC1);
+
+		//cvtColor(depthWarped, testd, 
+		//bgs(testd, frameMask, -1);
+
+		//imshow("Mask", frameMask);
+		//bgs.getBackgroundImage(bgIm);
+
+		if (bgIm.data != NULL)
+		{
+			cout << "Got BG" << endl;
+			imshow("BGIM", bgIm);
+		}
 
 		Mat depthWarpedNormalized;
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
