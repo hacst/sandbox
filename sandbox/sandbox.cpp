@@ -29,6 +29,7 @@ struct Settings {
    int monitor;
    bool fullscreen;
    int sandPlaneDistanceInMM;
+   std::string colorFile;
 
 	// Derived from settings
 	RECT monitorRect;
@@ -420,11 +421,11 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
-bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM)
+bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat *colorBand = NULL)
 {
 	const size_t rows = depthWarped.rows;
 	const size_t cols = depthWarped.cols;
-	depthWarpedNormalized = Mat(rows, cols, depthWarped.type());
+	depthWarpedNormalized = Mat(rows, cols, colorBand ? colorBand->type() : depthWarped.type());
 
 	const uint16_t topOrig = boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
 	const uint16_t range = boxBottomDistanceInMM - topOrig;
@@ -441,10 +442,19 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t box
 			// Shift and invert
 			val = boxBottomDistanceInMM - val;
 
-			// Scale and save
-			const uint16_t fac = numeric_limits<uint16_t>::max() / range;
-			const uint16_t color = val * fac;
-			depthWarpedNormalized.at<uint16_t>(Point(col, row)) = color;
+
+			if (colorBand)
+			{
+				// Apply color band
+				depthWarpedNormalized.at<cv::Vec3b>(Point(col, row)) = colorBand->at<cv::Vec3b>(Point(val, 0));
+			}
+			else
+			{
+				// Scale and save
+				const uint16_t fac = numeric_limits<uint16_t>::max() / range;
+				const uint16_t color = val * fac;
+				depthWarpedNormalized.at<uint16_t>(Point(col, row)) = color;
+			}
 		}
 	}
 
@@ -463,18 +473,6 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t box
 	}*/
 
 
-/*
-// 1024x768 Beamer resolution
-settings.beamerXres = 1024;
-settings.beamerYres = 768;
-
-// Sandbox constants
-settings.maxSandDepthInMM = 90;
-settings.maxSandHeightInMM = 200;
-
-*/
-
-
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
 	const char *keys =
@@ -484,6 +482,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{d|depth|90|Maximum sand depth below plane in mm}"
 		"{t|top|200|Maximum sand height above plane in mm}"
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
+		"{c|colors|colorbands.png|Colorband to use for coloring.}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -517,6 +516,8 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 	settings.maxSandDepthInMM = clp.get<int>("d");
 	settings.maxSandHeightInMM = clp.get<int>("t");
 
+	settings.colorFile = clp.get<std::string>("c");
+
 
 	if (!getMonitorRect(settings.monitor, settings.monitorRect))
 	{
@@ -533,6 +534,33 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 	return true;
 }
 
+bool loadColorFile(const std::string &colorFile, Mat &colors)
+{
+	cout << "Loading color file " << colorFile << "..." << endl;
+
+	colors = cv::imread(colorFile, 1);
+	if (colors.data == NULL) {
+		cout << "failed" << endl;
+		return false;
+	}
+
+	if(colors.rows != 1)
+	{
+		cout << "The colorband must only have one row" << endl;
+		return false;
+	}
+
+	//TODO: Add ability to scale this if needed
+	const uint16_t fullRange = settings.maxSandDepthInMM + settings.maxSandHeightInMM;
+	if (colors.cols != fullRange)
+	{
+		cout << "For given sand depth and height limits colorband has to cover " << fullRange << "mm, covers " << colors.rows << "mm (px) as columns." << endl;
+		return false;
+	}
+	
+	return true;
+}
+
 int main( int argc, char* argv[] )
 {
 	bool quit;
@@ -542,6 +570,10 @@ int main( int argc, char* argv[] )
 	if (quit)
 		return 0;
 	
+	Mat colors;
+	if (!loadColorFile(settings.colorFile, colors))
+		return 1;
+
 	VideoCapture capture;
 	if (!initializeCapture(capture))
 		return 1;
@@ -610,7 +642,7 @@ int main( int argc, char* argv[] )
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		Mat depthWarpedNormalized;
-		sandboxNormalize(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM);
+		sandboxNormalize(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, &colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 		//unsigned short centerval = depthWarped.at<unsigned short>(Point(settings.beamerXres/2, settings.beamerYres/2));
