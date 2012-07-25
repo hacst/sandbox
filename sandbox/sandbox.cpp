@@ -255,6 +255,7 @@ bool grabAndStore(VideoCapture &capture, const std::string &prefix = std::string
 	if(!imwrite(prefix + "bgr.png", img))
 		return false;
 
+	return true;
 	if(!capture.retrieve(img, CV_CAP_OPENNI_GRAY_IMAGE))
 		return false;
 
@@ -486,6 +487,75 @@ bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint
 	return true;
 }
 
+
+/**
+ * @brief Custom MedianFilter class
+ */
+
+class MedianFilter {
+private:
+	const size_t m_width;
+	const size_t m_height;
+	const size_t m_depth;
+	const size_t m_skip;
+
+	vector<cv::Mat> m_state;
+	size_t m_insertionPoint;
+
+public:
+	MedianFilter(size_t width, size_t height, size_t depth, size_t skip)
+		: m_width(width)
+		, m_height(height)
+		, m_depth(depth)
+		, m_skip(skip)
+		, m_insertionPoint(0)
+	{
+		m_state.reserve(m_depth);
+	}
+	
+	void addImage(cv::Mat &mat)
+	{
+		// Insert into ring buffer
+		if (m_state.size() < m_depth)
+			m_state.push_back(mat);
+		else
+			m_state[m_insertionPoint] = mat;
+
+		++m_insertionPoint;
+
+		if (m_insertionPoint >= m_depth)
+			m_insertionPoint = 0;
+	}
+
+	void getMedianImage(cv::Mat &mat)
+	{
+		// Calculate Median for images in skip intervals
+		vector<uint16_t> buf;
+		buf.resize(m_depth / m_skip);
+
+		mat = cv::Mat(m_height, m_width, CV_16UC1);
+
+		const size_t curDepth = m_state.size();
+
+		for (size_t y = 0; y < m_height; ++y)
+		{
+			for (size_t x = 0; x < m_width; ++x)
+			{
+				size_t n = 0;
+				for (size_t i = 0; i < curDepth; i += m_skip)
+				{
+					buf[n] = m_state[i].at<uint16_t>(Point(m_width, m_height));
+					++n;
+				}
+				sort(buf.begin(), buf.end());
+
+				mat.at<uint16_t>(Point(m_width, m_height)) = buf[buf.size() / 2];
+			}
+		}
+	}
+
+};
+
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
 	const char *keys =
@@ -603,6 +673,8 @@ int main( int argc, char* argv[] )
 	if (!initializeCapture(capture))
 		return 1;
 
+	//grabAndStoreMany(capture, 10, "white");
+
 	Mat homography;
 	if(!getHomography(capture, homography))
 		return 1;
@@ -630,12 +702,7 @@ int main( int argc, char* argv[] )
 		}
 	}
 
-	Mat frameMask;
-	BackgroundSubtractorMOG2 bgs;
-	bgs.getBackgroundImage(frameMask);
-
-	Mat bgIm;
-
+	MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 5);
 	cout << "Enter mainloop" << endl;
 
 	for (;;)
@@ -666,24 +733,7 @@ int main( int argc, char* argv[] )
 
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
-
-		//Mat testd;
-		//normalizeAndScale(depthMap, testd, settings.boxBottomDistanceInMM);
-		//Mat testd;
-		//depthWarped.convertTo(testd, CV_8UC1);
-
-		//cvtColor(depthWarped, testd, 
-		//bgs(testd, frameMask, -1);
-
-		//imshow("Mask", frameMask);
-		//bgs.getBackgroundImage(bgIm);
-
-		if (bgIm.data != NULL)
-		{
-			cout << "Got BG" << endl;
-			imshow("BGIM", bgIm);
-		}
-
+		//mf.addImage(
 		Mat depthWarpedNormalized;
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
