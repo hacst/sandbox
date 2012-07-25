@@ -25,11 +25,11 @@ using namespace std;
 //
 
 struct Settings {
-   // Command line settings
-   int monitor;
-   bool fullscreen;
-   int sandPlaneDistanceInMM;
-   std::string colorFile;
+	// Command line settings
+	int monitor;
+	bool fullscreen;
+	int sandPlaneDistanceInMM;
+	std::string colorFile;
 
 	// Derived from settings
 	RECT monitorRect;
@@ -48,87 +48,87 @@ struct Settings {
 #ifdef _WIN32
 
 BOOL CALLBACK MonitorEnumProc(
-   __in  HMONITOR hMonitor,
-   __in  HDC hdcMonitor,
-   __in  LPRECT lprcMonitor,
-   __in  LPARAM dwData
-   )
+	__in  HMONITOR hMonitor,
+	__in  HDC hdcMonitor,
+	__in  LPRECT lprcMonitor,
+	__in  LPARAM dwData
+	)
 {
-   std::vector<RECT>* monitors = (std::vector<RECT>*)dwData;
+	std::vector<RECT>* monitors = (std::vector<RECT>*)dwData;
 
-   monitors->push_back(*lprcMonitor);
+	monitors->push_back(*lprcMonitor);
 
-   return TRUE;
+	return TRUE;
 }
 
 bool enumMonitors(std::vector<RECT> &rect)
 {
-   cout << "Enumerating monitors...";
-   if(EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM) &rect) == 0)
-   {
-       cout << "failed" << endl;
-       return false;
-   }
-   cout << "ok" << endl;
-   return true;
+	cout << "Enumerating monitors...";
+	if(EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM) &rect) == 0)
+	{
+		cout << "failed" << endl;
+		return false;
+	}
+	cout << "ok" << endl;
+	return true;
 }
 
 bool fullScreen(RECT &monitor, const std::string windowName)
 {
-   HWND hwnd = FindWindowA(NULL, windowName.c_str());
-   if(hwnd == NULL) {
-       return false;
-   }
+	HWND hwnd = FindWindowA(NULL, windowName.c_str());
+	if(hwnd == NULL) {
+		return false;
+	}
 
-   SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW | WS_EX_TOPMOST);
-   SetWindowLongPtr(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-   
-   SetWindowPos(hwnd, HWND_TOPMOST, monitor.left, monitor.top, monitor.right - monitor.left, monitor.bottom - monitor.top, SWP_SHOWWINDOW);
-   
-   ShowWindow(hwnd, SW_MAXIMIZE);
+	SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW | WS_EX_TOPMOST);
+	SetWindowLongPtr(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
 
-   return true;
+	SetWindowPos(hwnd, HWND_TOPMOST, monitor.left, monitor.top, monitor.right - monitor.left, monitor.bottom - monitor.top, SWP_SHOWWINDOW);
+
+	ShowWindow(hwnd, SW_MAXIMIZE);
+
+	return true;
 }
 
 bool getMonitorRect(int monitor, RECT &monitorRect)
 {
-   std::vector<RECT> rect;
-   if(!enumMonitors(rect))
-       return false;
+	std::vector<RECT> rect;
+	if(!enumMonitors(rect))
+		return false;
 
-   if (monitor < 0 || monitor >= rect.size())
-       return false;
+	if (monitor < 0 || monitor >= rect.size())
+		return false;
 
-   monitorRect = rect[monitor];
+	monitorRect = rect[monitor];
 
-   return true;
+	return true;
 }
 
 bool printMonitors()
 {
-   std::vector<RECT> monitors;
-   if(!enumMonitors(monitors))
-   {
-       return false;
-   }
+	std::vector<RECT> monitors;
+	if(!enumMonitors(monitors))
+	{
+		return false;
+	}
 
-   cout << endl;
+	cout << endl;
 
-   size_t num = 0;
-   for (std::vector<RECT>::iterator it = monitors.begin();
-       it != monitors.end();
-       ++it)
-   {
-       RECT *monitor = &(*it);
+	size_t num = 0;
+	for (std::vector<RECT>::iterator it = monitors.begin();
+		it != monitors.end();
+		++it)
+	{
+		RECT *monitor = &(*it);
 
-       cout << "Monitor " << num << ":" << endl;
-       cout << "Left/Right: " << monitor->left << " - " << monitor->right << endl;
-       cout << "Top/Bottom: " << monitor->top << " - " << monitor->bottom << endl << endl;
+		cout << "Monitor " << num << ":" << endl;
+		cout << "Left/Right: " << monitor->left << " - " << monitor->right << endl;
+		cout << "Top/Bottom: " << monitor->top << " - " << monitor->bottom << endl << endl;
 
-       ++num;
-   }
+		++num;
+	}
 
-   return true;
+	return true;
 }
 #else
 
@@ -599,15 +599,11 @@ int main( int argc, char* argv[] )
 		return 1;
 
 	const std::string BGR_IMAGE = "Bgr Image";
-	const std::string DEPTH_MAP = "Depth Map";
 	const std::string BGR_WARPED = "Warped BGR Image";
-	const std::string DEPTH_WARPED = "Warped Depth Image";
 	const std::string SAND_NORMALIZED = "Normalized Sand";
 
 	namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
-	namedWindow(DEPTH_MAP, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 	namedWindow(BGR_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
-	namedWindow(DEPTH_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 	namedWindow(SAND_NORMALIZED);
 
 	if (settings.fullscreen)
@@ -659,11 +655,8 @@ int main( int argc, char* argv[] )
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
-		cout << capture.get(CV_CAP_PROP_POS_MSEC) << endl;
-		//imshow(BGR_WARPED, bgrWarped);
-		//imshow(DEPTH_WARPED, depthWarped);
-		//imshow(BGR_IMAGE, bgrImage);
-		//imshow(DEPTH_MAP, depthMap);
+		imshow(BGR_WARPED, bgrWarped);
+		imshow(BGR_IMAGE, bgrImage);
 
 		if( waitKey( 30 ) >= 0 )
 			break;
