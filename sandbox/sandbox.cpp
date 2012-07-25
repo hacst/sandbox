@@ -11,6 +11,10 @@
 #include <vector>
 #include <algorithm>
 
+#ifdef _WIN32
+#include <windows.h>
+#endif
+
 #include <sstream>
 
 using namespace cv;
@@ -20,13 +24,131 @@ using namespace std;
 //-- Constants
 //
 
-// 1024x768 Beamer resolution
-const int BEAMER_MAX_X = 1024;
-const int BEAMER_MAX_Y = 768;
+struct Settings {
+   // Command line settings
+   int monitor;
+   bool fullscreen;
+} settings;
 
-// Sandbox constants
-const int MAX_SAND_DEPTH_IN_MM = 90;
-const int MAX_SAND_HEIGHT_IN_MM = 200;
+struct DerivedSettings {
+	// Derived from settings
+	RECT monitor;
+
+	int beamerXres;
+	int beamerYres;
+
+	int maxSandDepthInMM;
+	int maxSandHeightInMM;
+} derivedSettings;
+
+#ifdef _WIN32
+
+BOOL CALLBACK MonitorEnumProc(
+   __in  HMONITOR hMonitor,
+   __in  HDC hdcMonitor,
+   __in  LPRECT lprcMonitor,
+   __in  LPARAM dwData
+   )
+{
+   std::vector<RECT>* monitors = (std::vector<RECT>*)dwData;
+
+   monitors->push_back(*lprcMonitor);
+
+   return TRUE;
+}
+
+bool enumMonitors(std::vector<RECT> &rect)
+{
+   cout << "Enumerating monitors...";
+   if(EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM) &rect) == 0)
+   {
+       cout << "failed" << endl;
+       return false;
+   }
+   cout << "ok" << endl;
+   return true;
+}
+
+bool fullScreen(RECT &monitor, const std::string windowName)
+{
+   HWND hwnd = FindWindowA(NULL, windowName.c_str());
+   if(hwnd == NULL) {
+       return false;
+   }
+
+   SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW | WS_EX_TOPMOST);
+   SetWindowLongPtr(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
+   
+   SetWindowPos(hwnd, HWND_TOPMOST, monitor.left, monitor.top, monitor.right - monitor.left, monitor.bottom - monitor.top, SWP_SHOWWINDOW);
+   
+   ShowWindow(hwnd, SW_MAXIMIZE);
+
+   return true;
+}
+
+bool getMonitorRect(int monitor, RECT &monitorRect)
+{
+   std::vector<RECT> rect;
+   if(!enumMonitors(rect))
+       return false;
+
+   if (monitor < 0 || monitor >= rect.size())
+       return false;
+
+   monitorRect = rect[monitor];
+
+   return true;
+}
+
+bool printMonitors()
+{
+   std::vector<RECT> monitors;
+   if(!enumMonitors(monitors))
+   {
+       return false;
+   }
+
+   cout << endl;
+
+   size_t num = 0;
+   for (std::vector<RECT>::iterator it = monitors.begin();
+       it != monitors.end();
+       ++it)
+   {
+       RECT *monitor = &(*it);
+
+       cout << "Monitor " << num << ":" << endl;
+       cout << "Left/Right: " << monitor->left << " - " << monitor->right << endl;
+       cout << "Top/Bottom: " << monitor->top << " - " << monitor->bottom << endl << endl;
+
+       ++num;
+   }
+
+   return true;
+}
+#else
+
+bool enumMonitors(std::vector<RECT> &rect) {
+	/* Not implemented for other platforms */
+	return false;
+}
+
+bool fullScreen(RECT &monitor, const std::string windowName) {
+	/* Not implemented for other platforms */
+	return false;
+}
+
+bool printMonitors() {
+	/* Not implemented for other platforms */ 
+	return false;
+}
+
+bool getMonitorRect(int monitor, RECT &monitorRect) {
+	/* Not implemented for other platforms */ 
+	return false;
+}
+
+#endif
 
 
 
@@ -240,9 +362,9 @@ bool getHomography(VideoCapture &capture, Mat &homography)
 	vector<Point2f> realPoints;
 
 	realPoints.push_back(Point2f(0,0)); // Top left
-	realPoints.push_back(Point2f(BEAMER_MAX_X,0)); // Top right
-	realPoints.push_back(Point2f(BEAMER_MAX_X, BEAMER_MAX_Y)); // Bottom right
-	realPoints.push_back(Point2f(0, BEAMER_MAX_Y)); // Bottom left
+	realPoints.push_back(Point2f(derivedSettings.beamerXres,0)); // Top right
+	realPoints.push_back(Point2f(derivedSettings.beamerXres, derivedSettings.beamerYres)); // Bottom right
+	realPoints.push_back(Point2f(0, derivedSettings.beamerYres)); // Bottom left
 
 	homography = getPerspectiveTransform(calibPoints, realPoints);
 	return true;
@@ -258,14 +380,14 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, unsigned short &
 		return false;
 
 	Mat depthWarpedInMM;
-	warpPerspective(rawDepthInMM, depthWarpedInMM, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
+	warpPerspective(rawDepthInMM, depthWarpedInMM, homography, Size(derivedSettings.beamerXres, derivedSettings.beamerYres));
 	
 	uint64_t val = 0;
 	unsigned int num = 0;
 	// Sample a few points to estimate ground level
-	for (int x = 0; x < BEAMER_MAX_X; x += BEAMER_MAX_X/16)
+	for (int x = 0; x < derivedSettings.beamerXres; x += derivedSettings.beamerXres/16)
 	{
-		for (int y = 0; y < BEAMER_MAX_Y; y += BEAMER_MAX_Y/16)
+		for (int y = 0; y < derivedSettings.beamerYres; y += derivedSettings.beamerYres/16)
 		{
 			val += depthWarpedInMM.at<unsigned short>(Point(x,y));
 			++num;
@@ -274,7 +396,7 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, unsigned short &
 
 	val = val / num;
 	cout << "Sandbox ground level estimated at: " << val << endl;
-	val += MAX_SAND_DEPTH_IN_MM;
+	val += derivedSettings.maxSandDepthInMM;
 	cout << "Sandbox deepest stop estimated at: " << val << endl;
 	
 	boxBottomMM = static_cast<unsigned short>(val);
@@ -282,7 +404,7 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, unsigned short &
 	//TODO: Perspective correction doesn't help with 3D issues. Should use 4 edge points for reconstructing 3d base plane but that can wait.
 
 	// Create depth correction as level
-	//Mat baseLayer = Mat(BEAMER_MAX_X, BEAMER_MAX_Y, depthWarpedInMM.type(), val); // Idealized sandbox base
+	//Mat baseLayer = Mat(derivedSettings.beamerXres, derivedSettings.beamerYres, depthWarpedInMM.type(), val); // Idealized sandbox base
 	//cv::subtract(baseLayer, depthWarpedInMM, depthCorrection);
 	return true;
 }
@@ -293,7 +415,7 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, unsigned sho
 	const size_t cols = depthWarped.cols;
 	depthWarpedNormalized = Mat(rows, cols, depthWarped.type());
 
-	const uint16_t topOrig = boxBottomMM - MAX_SAND_DEPTH_IN_MM - MAX_SAND_HEIGHT_IN_MM;
+	const uint16_t topOrig = boxBottomMM - derivedSettings.maxSandDepthInMM - derivedSettings.maxSandHeightInMM;
 	const uint16_t range = boxBottomMM - topOrig;
 
 	for (size_t row = 0; row < rows; ++row)
@@ -330,8 +452,82 @@ bool sandboxNormalize(Mat &depthWarped, Mat& depthWarpedNormalized, unsigned sho
 	}*/
 
 
+/*
+// 1024x768 Beamer resolution
+derivedSettings.beamerXres = 1024;
+derivedSettings.beamerYres = 768;
+
+// Sandbox constants
+derivedSettings.maxSandDepthInMM = 90;
+derivedSettings.maxSandHeightInMM = 200;
+
+*/
+
+
+bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
+{
+	const char *keys =
+		"{f|fullscreen|true|If true fullscreen is used for output window}"
+		"{m|monitor|0|Monitor to use for fullscreen}"
+		"{e|enumerate|false|Enumerate monitors and quit}"
+		"{d|depth|90|Maximum sand depth below plane in mm}"
+		"{t|top|200|Maximum sand height above plane in mm}"
+		"{h|help|false|Print help}";
+
+	CommandLineParser clp(argc, argv, keys);
+
+	if (clp.get<bool>("h"))
+	{
+		cout << "Usage: " << argv[0] << " [options]" << endl;
+		clp.printParams();
+		quit = true;
+		return true;
+	}
+
+	if (clp.get<bool>("e"))
+	{
+		if (printMonitors())
+		{
+			quit = true;
+			return true;
+		}
+		else
+		{
+			quit = true;
+			return false;
+		}
+	}
+
+	settings.fullscreen = clp.get<bool>("f");
+	settings.monitor = clp.get<int>("m");
+
+	derivedSettings.maxSandDepthInMM = clp.get<int>("d");
+	derivedSettings.maxSandHeightInMM = clp.get<int>("t");
+
+	if (!getMonitorRect(settings.monitor, derivedSettings.monitor))
+	{
+		cerr << "Failed to get information on monitor " << settings.monitor << endl;
+		cerr << "Use the -e option to enumerate available monitors" << endl;
+		quit = true;
+		return false;
+	}
+
+	derivedSettings.beamerXres = derivedSettings.monitor.right - derivedSettings.monitor.left;
+	derivedSettings.beamerYres = derivedSettings.monitor.bottom - derivedSettings.monitor.top;
+
+	quit = false;
+	return true;
+}
+
 int main( int argc, char* argv[] )
 {
+	bool quit;
+	if(!parseSettingsFromCommandline(argc, argv, quit))
+		return 1;
+	
+	if (quit)
+		return 0;
+	
 	VideoCapture capture;
 	if (!initializeCapture(capture))
 		return 1;
@@ -348,11 +544,25 @@ int main( int argc, char* argv[] )
 	const std::string DEPTH_MAP = "Depth Map";
 	const std::string BGR_WARPED = "Warped BGR Image";
 	const std::string DEPTH_WARPED = "Warped Depth Image";
+	const std::string SAND_NORMALIZED = "Normalized Sand";
 
 	namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 	namedWindow(DEPTH_MAP, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 	namedWindow(BGR_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
 	namedWindow(DEPTH_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	namedWindow(SAND_NORMALIZED);
+
+	if (settings.fullscreen)
+	{
+		if(!fullScreen(derivedSettings.monitor, SAND_NORMALIZED))
+		{
+			cerr << "Failed to fullscreen output window on monitor " << settings.monitor << endl;
+		}
+		else
+		{
+			cout << "Entered fullscreen on monitor " << settings.monitor << endl;
+		}
+	}
 
 
 	cout << "Enter mainloop" << endl;
@@ -381,16 +591,16 @@ int main( int argc, char* argv[] )
 		}
 
 		Mat bgrWarped;		
-		warpPerspective(bgrImage, bgrWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
+		warpPerspective(bgrImage, bgrWarped, homography, Size(derivedSettings.beamerXres, derivedSettings.beamerYres));
 
 		Mat depthWarped;
-		warpPerspective(depthMap, depthWarped, homography, Size(BEAMER_MAX_X, BEAMER_MAX_Y));
+		warpPerspective(depthMap, depthWarped, homography, Size(derivedSettings.beamerXres, derivedSettings.beamerYres));
 
 		Mat depthWarpedNormalized;
 		sandboxNormalize(depthWarped, depthWarpedNormalized, boxBottomMM);
 
-		imshow("sandnorm", depthWarpedNormalized);
-		//unsigned short centerval = depthWarped.at<unsigned short>(Point(BEAMER_MAX_X/2, BEAMER_MAX_Y/2));
+		imshow(SAND_NORMALIZED, depthWarpedNormalized);
+		//unsigned short centerval = depthWarped.at<unsigned short>(Point(derivedSettings.beamerXres/2, derivedSettings.beamerYres/2));
 		//cout << centerval << endl;
 
 		imshow(BGR_WARPED, bgrWarped);
