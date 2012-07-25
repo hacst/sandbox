@@ -544,12 +544,12 @@ public:
 				size_t n = 0;
 				for (size_t i = 0; i < curDepth; i += m_skip)
 				{
-					buf[n] = m_state[i].at<uint16_t>(Point(m_width, m_height));
+					buf[n] = m_state[i].at<uint16_t>(Point(x, y));
 					++n;
 				}
 				sort(buf.begin(), buf.end());
 
-				mat.at<uint16_t>(Point(m_width, m_height)) = buf[buf.size() / 2];
+				mat.at<uint16_t>(Point(x, y)) = buf[buf.size() / 2];
 			}
 		}
 	}
@@ -702,7 +702,7 @@ int main( int argc, char* argv[] )
 		}
 	}
 
-	MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 5);
+	MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 10);
 	cout << "Enter mainloop" << endl;
 
 	for (;;)
@@ -733,9 +733,14 @@ int main( int argc, char* argv[] )
 
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
-		//mf.addImage(
+
+		mf.addImage(depthWarped);
+
+		Mat depthWarpFiltered;
+		mf.getMedianImage(depthWarpFiltered);
+
 		Mat depthWarpedNormalized;
-		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
+		sandboxNormalizeAndColor(depthWarpFiltered, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
