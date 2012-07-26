@@ -930,15 +930,18 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
-	Mat avgMat(480,640, CV_16UC1);
+	//Mat avgMat(480,640, CV_16UC1);
 
-	AverageFilter avg(640, 480, 4,3);
+	//AverageFilter avg(640, 480, 4,3);
 
 
 	Stopwatch timer;
 	size_t frames = 0;
 
-	BackgroundSubtractorMOG bsm;
+	BackgroundSubtractorMOG2 bsm(10,16,false);
+	
+	//BackgroundSubtractorMOG bsm(5, 5, 0.9, 0.9);
+
 	Mat depthMask;
 	for (;;)
 	{
@@ -986,7 +989,7 @@ int main( int argc, char* argv[] )
 		bsm.getBackgroundImage(depthWarpedNormalized);
 		imshow("testing", depthMask);
 
-		imshow(SAND_NORMALIZED, filteredBg);
+		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
 		if( waitKey( 1 ) >= 0 ) // Needed for event processing in OpenCV
 			break;
