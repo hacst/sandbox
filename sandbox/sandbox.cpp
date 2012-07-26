@@ -106,7 +106,7 @@ bool getMonitorRect(int monitor, RECT &monitorRect)
 	if(!enumMonitors(rect))
 		return false;
 
-	if (monitor < 0 || monitor >= rect.size())
+	if (monitor < 0 || monitor >= (int)rect.size())
 		return false;
 
 	monitorRect = rect[monitor];
@@ -248,7 +248,7 @@ void calibrationMouseClickHandler(int event, int x, int y, int flags, void* ptr)
 	{
 		vector<Point2f> *calibPoints = (vector<Point2f>*)ptr;
 		cout << "Calibration point at x: " << x << " y: " << y << endl;
-		calibPoints->push_back(Point2f(x,y));
+		calibPoints->push_back(Point(x,y));
 	}
 }
 
@@ -403,10 +403,10 @@ bool getAutoCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &
 
 bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &calibPoints, vector<Point2f> &realPoints)
 {
-	realPoints.push_back(Point2f(0,0)); // Top left
-	realPoints.push_back(Point2f(settings.beamerXres,0)); // Top right
-	realPoints.push_back(Point2f(settings.beamerXres, settings.beamerYres)); // Bottom right
-	realPoints.push_back(Point2f(0, settings.beamerYres)); // Bottom left
+	realPoints.push_back(Point(0,0)); // Top left
+	realPoints.push_back(Point(settings.beamerXres,0)); // Top right
+	realPoints.push_back(Point(settings.beamerXres, settings.beamerYres)); // Bottom right
+	realPoints.push_back(Point(0, settings.beamerYres)); // Bottom left
 
 	calibPoints.clear();
 	const std::string CALIB_BGR_WND = "Calibration";
@@ -435,7 +435,7 @@ bool getManualCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f>
 			it != calibPoints.end();
 			++it)
 		{
-			circle(bgrImage, Point( it->x, it->y ), 5,  Scalar(0,0,255,0), 2, 8, 0 );
+			circle(bgrImage, Point2f( it->x, it->y ), 5,  Scalar(0,0,255,0), 2, 8, 0 );
 		}
 
 		putText(bgrImage, "Please click the edges of the beamer area clockwise starting top left", Point(5,15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0,0,255,0));
@@ -526,7 +526,17 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
-
+/**
+ * @brief Combined normalize and colorization of the depth map.
+ * Somewhat optimized version of normalization and colorization (single loop, less branches etc.) for
+ * 7% more overall performance with somewhat reduced redability....
+ *
+ * @param depthWarped Source depth map
+ * @param depthWarpedNormalized Destination image for colorized result.
+ * @param boxBottomDistanceInMM Distance to box bottom from sensor in mm
+ * @param colorBand Color band to use for mapping, empty for grayscale.
+ * @return True if successfull
+ */
 bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
 {
 	const bool colored = (colorBand.data != NULL);
