@@ -586,128 +586,6 @@ bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint
 	return true;
 }
 
-
-/**
- * @brief Custom MedianFilter class
- */
-
-class MedianFilter {
-private:
-	const size_t m_width;
-	const size_t m_height;
-	const size_t m_depth;
-	const size_t m_skip;
-
-	vector<cv::Mat> m_state;
-	size_t m_insertionPoint;
-
-public:
-	MedianFilter(size_t width, size_t height, size_t depth, size_t skip)
-		: m_width(width)
-		, m_height(height)
-		, m_depth(depth)
-		, m_skip(skip)
-		, m_insertionPoint(0)
-	{
-		m_state.reserve(m_depth);
-	}
-	
-	void addImage(cv::Mat &mat)
-	{
-		// Insert into ring buffer
-		if (m_state.size() < m_depth)
-			m_state.push_back(mat);
-		else
-			m_state[m_insertionPoint] = mat;
-
-		++m_insertionPoint;
-
-		if (m_insertionPoint >= m_depth)
-			m_insertionPoint = 0;
-	}
-
-	void getMedianImage(cv::Mat &mat)
-	{
-		// Calculate Median for images in skip intervals
-		vector<uint16_t> buf;
-		buf.resize(m_depth / m_skip);
-
-		mat = cv::Mat(m_height, m_width, CV_16UC1);
-
-		const size_t curDepth = m_state.size();
-
-		for (size_t y = 0; y < m_height; ++y)
-		{
-			for (size_t x = 0; x < m_width; ++x)
-			{
-				size_t n = 0;
-				for (size_t i = 0; i < curDepth; i += m_skip)
-				{
-					buf[n] = m_state[i].at<uint16_t>(Point(x, y));
-					++n;
-				}
-				sort(buf.begin(), buf.end());
-
-				mat.at<uint16_t>(Point(x, y)) = buf[buf.size() / 2];
-			}
-		}
-	}
-};
-
-/**
- * @brief Custom AverageFilter class
- */
-
-class AverageFilter {
-private:
-	const size_t m_width;
-	const size_t m_height;
-	const size_t m_depth;
-	const size_t m_skip;
-
-	vector<cv::Mat> m_state;
-	size_t m_insertionPoint;
-
-public:
-	AverageFilter(size_t width, size_t height, size_t depth, size_t skip)
-		: m_width(width)
-		, m_height(height)
-		, m_depth(depth)
-		, m_skip(skip)
-		, m_insertionPoint(0)
-	{
-		m_state.reserve(m_depth);
-	}
-	
-	void addImage(cv::Mat &mat)
-	{
-		// Insert into ring buffer
-		if (m_state.size() < m_depth)
-			m_state.push_back(mat);
-		else
-			m_state[m_insertionPoint] = mat;
-
-		++m_insertionPoint;
-
-		if (m_insertionPoint >= m_depth)
-			m_insertionPoint = 0;
-	}
-
-	void getAvgImage(cv::Mat &mat)
-	{
-
-		// Calculate Median for images in skip intervals
-		double avgWeight = 1. / m_state.size();
-
-		memset(mat.data, 0, mat.dataend - mat.data);
-
-		for (size_t pos = 1; pos < m_state.size(); ++pos)
-		{
-			cv::addWeighted(m_state[pos], avgWeight, mat, 1, 0, mat);
-		}
-	}
-};
-
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
 	const char *keys =
@@ -914,7 +792,6 @@ int main( int argc, char* argv[] )
 		cout << "BGR color view disabled, enable with -b if needed" << endl;
 	}
 
-	//MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 10);
 	cout << "Enter mainloop" << endl;
 
 	// Define loop variables here to prevent unneeded allocations
@@ -929,11 +806,6 @@ int main( int argc, char* argv[] )
 
 	Mat bgrImage;
 	Mat bgrWarped;
-
-	Mat avgMat(480,640, CV_16UC1);
-
-	AverageFilter avg(640, 480, 4,3);
-
 
 	Stopwatch timer;
 	size_t frames = 0;
@@ -974,16 +846,7 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		avg.addImage(depthMap);
-
-		avg.getAvgImage(avgMat);
-
-		warpPerspective(avgMat, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
-
-		//mf.addImage(depthWarped);
-
-		//Mat depthWarpFiltered;
-		//mf.getMedianImage(depthWarpFiltered);
+		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
