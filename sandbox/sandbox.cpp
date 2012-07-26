@@ -1,4 +1,5 @@
 #include "stdafx.h"
+#define NOMINMAX
 
 
 #include <opencv2/opencv.hpp>
@@ -151,69 +152,6 @@ bool getMonitorRect(int monitor, RECT &monitorRect) {
 }
 
 #endif
-
-
-
-static void colorizeDisparity( const Mat& gray, Mat& rgb, double maxDisp=-1.f, float S=1.f, float V=1.f )
-{
-    CV_Assert( !gray.empty() );
-    CV_Assert( gray.type() == CV_8UC1 );
-
-    if( maxDisp <= 0 )
-    {
-        maxDisp = 0;
-        minMaxLoc( gray, 0, &maxDisp );
-    }
-
-    rgb.create( gray.size(), CV_8UC3 );
-    rgb = Scalar::all(0);
-    if( maxDisp < 1 )
-        return;
-
-    for( int y = 0; y < gray.rows; y++ )
-    {
-        for( int x = 0; x < gray.cols; x++ )
-        {
-            uchar d = gray.at<uchar>(y,x);
-            unsigned int H = ((uchar)maxDisp - d) * 240 / (uchar)maxDisp;
-
-            unsigned int hi = (H/60) % 6;
-            float f = H/60.f - H/60;
-            float p = V * (1 - S);
-            float q = V * (1 - f * S);
-            float t = V * (1 - (1 - f) * S);
-
-            Point3f res;
-
-            if( hi == 0 ) //R = V,  G = t,  B = p
-                res = Point3f( p, t, V );
-            if( hi == 1 ) // R = q, G = V,  B = p
-                res = Point3f( p, V, q );
-            if( hi == 2 ) // R = p, G = V,  B = t
-                res = Point3f( t, V, p );
-            if( hi == 3 ) // R = p, G = q,  B = V
-                res = Point3f( V, q, p );
-            if( hi == 4 ) // R = t, G = p,  B = V
-                res = Point3f( V, p, t );
-            if( hi == 5 ) // R = V, G = p,  B = q
-                res = Point3f( q, p, V );
-
-            uchar b = (uchar)(std::max(0.f, std::min (res.x, 1.f)) * 255.f);
-            uchar g = (uchar)(std::max(0.f, std::min (res.y, 1.f)) * 255.f);
-            uchar r = (uchar)(std::max(0.f, std::min (res.z, 1.f)) * 255.f);
-
-            rgb.at<Point3_<uchar> >(y,x) = Point3_<uchar>(b, g, r);
-        }
-    }
-}
-
-static float getMaxDisparity( VideoCapture& capture )
-{
-    const int minDistance = 400; // mm
-    float b = (float)capture.get( CV_CAP_OPENNI_DEPTH_GENERATOR_BASELINE ); // mm
-    float F = (float)capture.get( CV_CAP_OPENNI_DEPTH_GENERATOR_FOCAL_LENGTH ); // pixels
-    return b * F / minDistance;
-}
 
 bool initializeCapture(VideoCapture &capture)
 {
@@ -418,32 +356,6 @@ bool getDepthCorrection(VideoCapture &capture, Mat &homography, uint16_t &boxBot
 	return true;
 }
 
-/*
-bool normalizeAndScale(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM)
-{
-	const size_t rows = depthWarped.rows;
-	const size_t cols = depthWarped.cols;
-	depthWarpedNormalized = Mat(rows, cols, CV_8U);
-
-	const uint16_t topOrig = boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
-	const uint16_t range = boxBottomDistanceInMM - topOrig;
-
-	for (size_t row = 0; row < rows; ++row)
-	{
-		for (size_t col = 0; col < cols; ++col)
-		{
-			uint16_t val = depthWarped.at<uint16_t>(Point(col, row));
-			// Clip
-			if (val > boxBottomDistanceInMM) val = boxBottomDistanceInMM;
-			else if (val < topOrig + 1) val = topOrig + 1;
-
-			// Shift and invert
-			depthWarpedNormalized.at<uint8_t>(Point(col,row)) = static_cast<uint8_t>(boxBottomDistanceInMM - val);
-		}
-	}
-	return true;
-}*/
-
 
 bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint16_t boxBottomDistanceInMM, Mat colorBand)
 {
@@ -456,30 +368,32 @@ bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint
 	const uint16_t topOrig = boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
 	const uint16_t range = boxBottomDistanceInMM - topOrig;
 
-	for (size_t row = 0; row < rows; ++row)
+	if (colored)
 	{
-		for (size_t col = 0; col < cols; ++col)
+		uint16_t value;
+		uint8_t *target = depthWarpedNormalized.data;
+		for(uint16_t *current = (uint16_t*)depthWarped.data; current != (uint16_t*)depthWarped.dataend; ++current)
 		{
-			uint16_t val = depthWarped.at<uint16_t>(Point(col, row));
 			// Clip
-			if (val > boxBottomDistanceInMM) val = boxBottomDistanceInMM;
-			else if (val < topOrig + 1) val = topOrig + 1;
+			value = boxBottomDistanceInMM - std::min<uint16_t>(boxBottomDistanceInMM, std::max<uint16_t>(topOrig + 1, *current));
+			memcpy(target, colorBand.data + (value * 3), 3);
 
-			// Shift and invert
-			val = boxBottomDistanceInMM - val;
+			target += 3;
+		}
+	}
+	else
+	{
+		uint16_t value;
+		uint16_t *target = (uint16_t*) depthWarpedNormalized.data;
+		const uint16_t scale = std::numeric_limits<uint16_t>::max() / range;
 
-			if (colored)
-			{
-				// Apply color band
-				depthWarpedNormalized.at<cv::Vec3b>(Point(col, row)) = colorBand.at<cv::Vec3b>(Point(val, 0));
-			}
-			else
-			{
-				// Scale and save
-				const uint16_t fac = numeric_limits<uint16_t>::max() / range;
-				const uint16_t color = val * fac;
-				depthWarpedNormalized.at<uint16_t>(Point(col, row)) = color;
-			}
+		for(uint16_t *current = (uint16_t*)depthWarped.data; current != (uint16_t*)depthWarped.dataend; ++current)
+		{
+			// Clip
+			value = boxBottomDistanceInMM - std::min<uint16_t>(boxBottomDistanceInMM, std::max<uint16_t>(topOrig + 1, *current));
+			*target = value * scale;
+
+			++target;
 		}
 	}
 
@@ -553,7 +467,6 @@ public:
 			}
 		}
 	}
-
 };
 
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
@@ -702,7 +615,7 @@ int main( int argc, char* argv[] )
 		}
 	}
 
-	MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 10);
+	//MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 10);
 	cout << "Enter mainloop" << endl;
 
 	for (;;)
@@ -734,20 +647,20 @@ int main( int argc, char* argv[] )
 		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
-		mf.addImage(depthWarped);
+		//mf.addImage(depthWarped);
 
-		Mat depthWarpFiltered;
-		mf.getMedianImage(depthWarpFiltered);
+		//Mat depthWarpFiltered;
+		//mf.getMedianImage(depthWarpFiltered);
 
 		Mat depthWarpedNormalized;
-		sandboxNormalizeAndColor(depthWarpFiltered, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
+		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
 		imshow(BGR_WARPED, bgrWarped);
 		imshow(BGR_IMAGE, bgrImage);
 
-		if( waitKey( 30 ) >= 0 )
+		if( waitKey( 1 ) >= 0 )
 			break;
 	}
 
