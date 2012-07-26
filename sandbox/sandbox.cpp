@@ -27,6 +27,7 @@ struct Settings {
 	// Command line settings
 	int monitor;
 	bool fullscreen;
+	bool displayBGR;
 	int sandPlaneDistanceInMM;
 	std::string colorFile;
 
@@ -479,6 +480,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{t|top|200|Maximum sand height above plane in mm}"
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
 		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
+		"{b|bgr|false|If true BGR color view is displayed}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -507,6 +509,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 	settings.fullscreen = clp.get<bool>("f");
 	settings.monitor = clp.get<int>("m");
+	settings.displayBGR = clp.get<bool>("b");
 
 	settings.sandPlaneDistanceInMM = clp.get<int>("g");
 	settings.maxSandDepthInMM = clp.get<int>("d");
@@ -564,6 +567,46 @@ bool loadColorFile(const std::string &colorFile, Mat &colors)
 	return true;
 }
 
+class Stopwatch {
+	const double m_freq;
+	int64 m_startTicks;
+
+public:
+	Stopwatch()
+		: m_freq(cv::getTickFrequency())
+		, m_startTicks(cv::getTickCount()) {}
+
+	double getTime()
+	{
+		return static_cast<double>(cv::getTickCount() - m_startTicks) / m_freq;
+	}
+
+	double reset()
+	{
+		const int64 cur = cv::getTickCount();
+		double result =  static_cast<double>(cv::getTickCount() - m_startTicks) / m_freq;
+		m_startTicks = cur;
+
+		return result;
+	}
+
+};
+
+void renderInfo(const std::string &window, Mat &infoMat, double fps)
+{
+	memset(infoMat.data, 255, infoMat.dataend - infoMat.data);
+
+	putText(infoMat, "Select this window and press ESC to quit", Point(5,15), FONT_HERSHEY_SIMPLEX, 0.5, Scalar(0,0,255,0));
+	stringstream ss;
+	ss.precision(5);
+	if (fps <= 0) ss << "FPS: ?";
+	else ss << "FPS: " << fps;
+
+	putText(infoMat, ss.str(), Point(5,100), FONT_HERSHEY_SIMPLEX, 1.0, Scalar(0,0,0,0));
+
+	imshow(window, infoMat);
+}
+
 int main( int argc, char* argv[] )
 {
 	bool quit;
@@ -598,9 +641,13 @@ int main( int argc, char* argv[] )
 	const std::string BGR_IMAGE = "Bgr Image";
 	const std::string BGR_WARPED = "Warped BGR Image";
 	const std::string SAND_NORMALIZED = "Normalized Sand";
+	const std::string INFO_VIEW = "Runtime information";
 
-	namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
-	namedWindow(BGR_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	if (settings.displayBGR) {
+		namedWindow(BGR_IMAGE, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+		namedWindow(BGR_WARPED, CV_WINDOW_KEEPRATIO | CV_GUI_EXPANDED);
+	}
+
 	namedWindow(SAND_NORMALIZED);
 
 	if (settings.fullscreen)
@@ -615,24 +662,58 @@ int main( int argc, char* argv[] )
 		}
 	}
 
+	if (!settings.displayBGR)
+	{
+		cout << "BGR color view disabled, enable with -b if needed" << endl;
+	}
+
 	//MedianFilter mf(settings.beamerXres, settings.beamerYres, 30, 10);
 	cout << "Enter mainloop" << endl;
 
+	// Define loop variables here to prevent unneeded allocations
+	Mat infoMat(200,400, CV_8UC3);
+
+	// Render dummy info
+	renderInfo(INFO_VIEW, infoMat, -1);
+
+	Mat depthMap;
+	Mat depthWarped;
+	Mat depthWarpedNormalized;
+
+	Mat bgrImage;
+	Mat bgrWarped;
+
+	Stopwatch timer;
+	size_t frames = 0;
+
 	for (;;)
 	{
-		Mat bgrImage;
-		Mat depthMap;
-
 		if (!capture.grab())
 		{
 			cerr << "Failed to grab frame" << endl;
 			return 1;
 		}
 
-		if (!capture.retrieve(bgrImage, CV_CAP_OPENNI_BGR_IMAGE))
+		if (timer.getTime() > 2.)
 		{
-			cerr << "Failed to retrieve" << endl;
-			return 1;
+			// Update info display every 2 seconds
+			const double took = timer.reset();
+			const double fps = frames / took;
+			frames = 0;
+			renderInfo(INFO_VIEW, infoMat, fps);
+		}
+
+		if (settings.displayBGR) {
+			if (!capture.retrieve(bgrImage, CV_CAP_OPENNI_BGR_IMAGE))
+			{
+				cerr << "Failed to retrieve" << endl;
+				return 1;
+			}
+
+			warpPerspective(bgrImage, bgrWarped, homography, Size(settings.beamerXres, settings.beamerYres));
+			
+			imshow(BGR_WARPED, bgrWarped);
+			imshow(BGR_IMAGE, bgrImage);
 		}
 
 		if (!capture.retrieve(depthMap, CV_CAP_OPENNI_DEPTH_MAP))
@@ -641,10 +722,6 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		Mat bgrWarped;		
-		warpPerspective(bgrImage, bgrWarped, homography, Size(settings.beamerXres, settings.beamerYres));
-
-		Mat depthWarped;
 		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		//mf.addImage(depthWarped);
@@ -652,16 +729,14 @@ int main( int argc, char* argv[] )
 		//Mat depthWarpFiltered;
 		//mf.getMedianImage(depthWarpFiltered);
 
-		Mat depthWarpedNormalized;
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
-		imshow(BGR_WARPED, bgrWarped);
-		imshow(BGR_IMAGE, bgrImage);
-
-		if( waitKey( 1 ) >= 0 )
+		if( waitKey( 1 ) >= 0 ) // Needed for event processing in OpenCV
 			break;
+
+		++frames;
 	}
 
 	return 0;
