@@ -938,6 +938,8 @@ int main( int argc, char* argv[] )
 	Stopwatch timer;
 	size_t frames = 0;
 
+	BackgroundSubtractorMOG bsm;
+	Mat depthMask;
 	for (;;)
 	{
 		if (!capture.grab())
@@ -974,20 +976,17 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		avg.addImage(depthMap);
-
-		avg.getAvgImage(avgMat);
-
-		warpPerspective(avgMat, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
-
-		//mf.addImage(depthWarped);
-
-		//Mat depthWarpFiltered;
-		//mf.getMedianImage(depthWarpFiltered);
+		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
-		imshow(SAND_NORMALIZED, depthWarpedNormalized);
+		bsm(depthWarpedNormalized, depthMask);
+		Mat filteredBg(depthWarpedNormalized.rows, depthWarpedNormalized.cols, CV_8UC3);
+
+		bsm.getBackgroundImage(depthWarpedNormalized);
+		imshow("testing", depthMask);
+
+		imshow(SAND_NORMALIZED, filteredBg);
 
 		if( waitKey( 1 ) >= 0 ) // Needed for event processing in OpenCV
 			break;
