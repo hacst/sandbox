@@ -392,7 +392,12 @@ bool getAutoCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &
 		}
 
 		if( waitKey( 30 ) >= 0 )
-			break;
+		{
+			cerr << "Automatic calibration aborted" << endl;
+			cv::destroyWindow(CALIB_BGR_WND);
+			cv::destroyWindow(CALIB_BGR_WND_MONITOR);
+			return false;
+		}
 
 	}
 
@@ -649,6 +654,60 @@ public:
 	}
 };
 
+/**
+ * @brief Custom AverageFilter class
+ */
+
+class AverageFilter {
+private:
+	const size_t m_width;
+	const size_t m_height;
+	const size_t m_depth;
+	const size_t m_skip;
+
+	vector<cv::Mat> m_state;
+	size_t m_insertionPoint;
+
+public:
+	AverageFilter(size_t width, size_t height, size_t depth, size_t skip)
+		: m_width(width)
+		, m_height(height)
+		, m_depth(depth)
+		, m_skip(skip)
+		, m_insertionPoint(0)
+	{
+		m_state.reserve(m_depth);
+	}
+	
+	void addImage(cv::Mat &mat)
+	{
+		// Insert into ring buffer
+		if (m_state.size() < m_depth)
+			m_state.push_back(mat);
+		else
+			m_state[m_insertionPoint] = mat;
+
+		++m_insertionPoint;
+
+		if (m_insertionPoint >= m_depth)
+			m_insertionPoint = 0;
+	}
+
+	void getAvgImage(cv::Mat &mat)
+	{
+
+		// Calculate Median for images in skip intervals
+		double avgWeight = 1. / m_state.size();
+
+		memset(mat.data, 0, mat.dataend - mat.data);
+
+		for (size_t pos = 1; pos < m_state.size(); ++pos)
+		{
+			cv::addWeighted(m_state[pos], avgWeight, mat, 1, 0, mat);
+		}
+	}
+};
+
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
 	const char *keys =
@@ -871,6 +930,11 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
+	Mat avgMat(480,640, CV_16UC1);
+
+	AverageFilter avg(640, 480, 4,3);
+
+
 	Stopwatch timer;
 	size_t frames = 0;
 
@@ -910,7 +974,11 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
+		avg.addImage(depthMap);
+
+		avg.getAvgImage(avgMat);
+
+		warpPerspective(avgMat, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		//mf.addImage(depthWarped);
 
