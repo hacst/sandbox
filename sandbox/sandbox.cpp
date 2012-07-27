@@ -251,6 +251,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{avgs|averagingstepsize|1|Averaging filter step size.}"
 		"{medd|mediandepth|0|Median filter depth in frames. (0 = off)}"
 		"{meds|medianstepsize|1|Median filter step size.}"
+		"{east|eastereggshhhh|NONE|Nothing really, doesn't take a path to a small rgb png either"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -287,6 +288,9 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 	settings.colorFile = clp.get<std::string>("c");
 	if (settings.colorFile == "NONE") settings.colorFile.clear(); // No color file
+
+	settings.treasureFile = clp.get<std::string>("east");
+	if (settings.treasureFile == "NONE") settings.treasureFile.clear(); // No treasure file
 
 
 	if (!getMonitorRect(settings.monitor, settings.monitorRect))
@@ -411,6 +415,40 @@ void renderInfo(const std::string &window, Mat &infoMat, double fps)
 	imshow(window, infoMat);
 }
 
+bool huntTreasure(Mat &depthMap, Mat &treasure, Mat &display, int left, int top, int depth = 50, double threshold = 0.7)
+{
+	const int right = left + treasure.cols;
+	const int bottom = top + treasure.rows;
+
+	const uint16_t topOrig = settings.boxBottomDistanceInMM - settings.maxSandDepthInMM - settings.maxSandHeightInMM;
+
+	assert(depthMap.type() == CV_16UC1);
+	assert(display.type() == CV_8UC3);
+	assert(display.type() == CV_8UC3);
+
+	size_t foundPx = 0;
+
+	for (int x = left; x < right; ++x)
+	{
+		for (int y = top; y < bottom; ++y)
+		{
+			const uint16_t val = settings.boxBottomDistanceInMM - std::min<uint16_t>(settings.boxBottomDistanceInMM, std::max<uint16_t>(topOrig + 1, depthMap.at<uint16_t>(Point(x,y))));
+			if (val <= depth)
+			{
+				// Found pixel of treasure
+				Vec3b pval(treasure.at<Vec3b>(Point(x - left, y - top)));
+				if (pval != Vec3b(255,0,255))
+					display.at<Vec3b>(Point(x, y)) = pval;
+
+				++foundPx;
+			}
+		}
+	}
+
+	const double allPx = treasure.cols * treasure.rows;
+	return (foundPx / allPx >= threshold);
+}
+
 int main( int argc, char* argv[] )
 {
 	bool quit;
@@ -494,6 +532,24 @@ int main( int argc, char* argv[] )
 
 	Mat filteredDepthmap;
 
+	Mat treasure;
+	int treasureX;
+	int treasureY;
+	if (!settings.treasureFile.empty())
+	{
+		treasure = imread(settings.treasureFile);
+		if (treasure.type() != CV_8UC3)
+		{
+			cerr << "Indegestible" << endl;
+			settings.treasureFile = std::string();
+		}
+		srand((unsigned int)(cv::getTickCount() & 0xFFFFFFFF));
+		treasureX = rand() % (settings.beamerXres - treasure.cols);
+		treasureY = rand() % (settings.beamerYres - treasure.rows);
+
+		cout << "Find the treasure " << treasureX << " " << treasureY << endl;
+	}
+
 	for (;;)
 	{
 		if (!capture.grab())
@@ -550,9 +606,26 @@ int main( int argc, char* argv[] )
 
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
+		if (!settings.treasureFile.empty())
+		{
+			if(huntTreasure(depthWarped, treasure, depthWarpedNormalized, treasureX, treasureY))
+			{
+				cout << "You found the treasure" << endl;
+			}
+		}
+
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
-		if( waitKey( 1 ) >= 0 ) // Needed for event processing in OpenCV
+		int key = waitKey(1);
+		if (key == 't')
+		{
+					treasureX = rand() % (settings.beamerXres - treasure.cols);
+		treasureY = rand() % (settings.beamerYres - treasure.rows);
+
+		cout << "Find the treasure " << treasureX << " " << treasureY << endl;
+
+		}
+		if( key == 27 ) // Needed for event processing in OpenCV
 			break;
 
 		++frames;
