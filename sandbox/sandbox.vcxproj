@@ -89,15 +89,23 @@
   <ItemGroup>
     <ClInclude Include="AveragingFilter.h" />
     <ClInclude Include="Fullscreen.h" />
+    <ClInclude Include="HarrisCornerDetection.h" />
     <ClInclude Include="HistoryBuffer.h" />
+    <ClInclude Include="HoughCornerDetection.h" />
+    <ClInclude Include="ManualCornerDetection.h" />
     <ClInclude Include="MedianFilter.h" />
+    <ClInclude Include="Settings.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AveragingFilter.cpp" />
     <ClCompile Include="Fullscreen.cpp" />
+    <ClCompile Include="HarrisCornerDetection.cpp" />
     <ClCompile Include="HistoryBuffer.cpp" />
+    <ClCompile Include="HoughCornerDetection.cpp" />
+    <ClCompile Include="ManualCornerDetection.cpp" />
     <ClCompile Include="MedianFilter.cpp" />
     <ClCompile Include="sandbox.cpp" />
+    <ClCompile Include="Settings.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
