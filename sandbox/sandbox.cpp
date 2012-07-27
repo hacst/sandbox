@@ -20,8 +20,9 @@ using namespace cv;
 using namespace std;
 
 enum CalibrationModes {
-	AUTOMATIC = 0,
-	MANUAL = 1,
+	MANUAL,
+	AUTO_HOUGH,
+	AUTO_HARRIS,
 	CALIBRATION_MODE_MAX
 };
 //
@@ -252,7 +253,127 @@ void calibrationMouseClickHandler(int event, int x, int y, int flags, void* ptr)
 	}
 }
 
-bool getAutoCalibrationRectangleCorners(VideoCapture &capture, vector<Point2f> &calibPoints, vector<Point2f> &realPoints)
+bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Point2f> &calibPoints, vector<Point2f> &realPoints){
+	calibPoints.clear();
+	const std::string CALIB_BGR_WND_2 = "Harris Calibration";
+	namedWindow(CALIB_BGR_WND_2);
+
+
+	realPoints.push_back(Point2f(0,0)); // Top left
+	realPoints.push_back(Point2f(1024,0)); // Top right
+	realPoints.push_back(Point2f(1024, 768)); // Bottom right
+	realPoints.push_back(Point2f(0, 768)); // Bottom left
+
+	if (settings.fullscreen)
+	{
+		if(!fullScreen(settings.monitorRect, CALIB_BGR_WND_2))
+		{
+			cerr << "Failed to fullscreen output window on monitor " << settings.monitor << endl;
+		}
+		else
+		{
+			cout << "Entered fullscreen on monitor " << settings.monitor << endl;
+		}
+	}
+
+	Mat m(settings.beamerYres, settings.beamerXres, CV_8UC1);
+	memset(m.data, 0xFF, m.dataend - m.data);
+
+	imshow(CALIB_BGR_WND_2, m);
+
+
+	for(;;)
+	{
+		calibPoints.clear();
+		
+
+		waitKey(100);
+
+		if(!capture.grab())
+		{
+			cerr << "Failed to grab" << endl;
+			cv::destroyWindow(CALIB_BGR_WND_2);
+			return 1;
+		}
+
+		Mat mat, mat2;
+		if(!capture.retrieve(mat, CV_CAP_OPENNI_BGR_IMAGE))
+		{
+			cerr << "Failed to retrieve" << endl;
+			cv::destroyWindow(CALIB_BGR_WND_2);
+			return 1;
+		}	
+	
+	
+		/// Convert it to gray
+		Mat src_gray;
+		cvtColor( mat, src_gray, CV_BGR2GRAY );
+	
+		int blockSize = 4;
+		int apertureSize = 3;
+		double k = 0.01;
+
+		Mat chImg, chImgNorm, chImgNormScaled;
+		cornerHarris(src_gray, chImg, blockSize, apertureSize, k, BORDER_DEFAULT);
+		normalize( chImg, chImgNorm, 0, 255, NORM_MINMAX, CV_32FC1, Mat() );
+		convertScaleAbs( chImgNorm, chImgNormScaled );
+
+		/// erkannte Ecken in tempPoints abspeichern	
+		int thresh = 70;
+		vector<Point> points;
+		for( int j = 0; j < chImgNorm.rows ; j++ ){
+			for( int i = 0; i < chImgNorm.cols; i++ ){
+				if( (int) chImgNorm.at<float>(j,i) > thresh ){
+					points.push_back(Point(i, j));
+				}
+			}
+		}
+		/// nahliegende Eckpunkte als ein punkt betrachten  
+		int dist = 10;
+		for(int i = 0; i < points.size(); i++){
+			//cout << points[i].x << "," << points[i].y << endl;
+			calibPoints.push_back(points[i]);
+			//realPoints.push_back(points[i]);
+			circle( chImgNormScaled, points[i], 5,  Scalar(0), 2, 8, 0 );
+			for(int j = i + 1; j < points.size(); j++){
+				if( (points[j].x > (points[i].x - dist) & points[j].x < (points[i].x + dist)) 
+					&& (points[j].y > (points[i].y - dist) & points[j].y < (points[i].y + dist)) ){
+						i++;
+				} else {
+					break;
+				}
+			}
+		}
+		imshow("Harris", chImgNormScaled);
+
+
+
+
+
+		if (calibPoints.size() == 4) {
+			cerr << "Harris calibration done" << endl;
+			waitKey(1000);
+			break;
+		}
+
+		if( waitKey( 30 ) >= 0 )
+		{
+			cerr << "Harris calibration aborted" << endl;
+			cv::destroyWindow(CALIB_BGR_WND_2);
+			return false;
+		}
+	}
+
+	cv::destroyWindow(CALIB_BGR_WND_2);
+	return true;
+
+}
+
+
+
+
+
+bool getAutoCalibrationRectangleCornersHough(VideoCapture &capture, vector<Point2f> &calibPoints, vector<Point2f> &realPoints)
 {
 	calibPoints.clear();
 	const std::string CALIB_BGR_WND = "Auto Calibration";
@@ -467,13 +588,21 @@ bool getHomography(VideoCapture &capture, Mat &homography)
 	vector<Point2f> calibPoints;
 	vector<Point2f> realPoints;
 
-	if (settings.calibrationMode == AUTOMATIC) {
-		if(!getAutoCalibrationRectangleCorners(capture, calibPoints, realPoints))
+	if (settings.calibrationMode == AUTO_HARRIS) {
+		if(!getAutoCalibrationRectangleCornersHarris(capture, calibPoints, realPoints))
+		{
+			cerr << "Auto harris calibration failed, starting manual calibration" << endl;
+			settings.calibrationMode = MANUAL;
+		}
+	}
+	else if (settings.calibrationMode == AUTO_HOUGH) {
+		if(!getAutoCalibrationRectangleCornersHough(capture, calibPoints, realPoints))
 		{
 			cerr << "Auto calibration failed, starting manual calibration" << endl;
 			settings.calibrationMode = MANUAL;
 		}
 	}
+
 
 	if (settings.calibrationMode == MANUAL) {
 		if(!getManualCalibrationRectangleCorners(capture, calibPoints, realPoints))
@@ -597,7 +726,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
 		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
 		"{b|bgr|false|If true BGR color view is displayed}"
-		"{a|adjustment|0|Calibration mode. (0 for automatic, 1 for manual)}"
+		"{a|adjustment|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -732,6 +861,65 @@ void renderInfo(const std::string &window, Mat &infoMat, double fps)
 	imshow(window, infoMat);
 }
 
+class AveragingFilter {
+public:
+	AveragingFilter(const size_t depth)
+		: m_depth(depth)
+		, m_insertionPoint(0)
+	{
+
+	}
+
+	void addFrame(cv::Mat &frame, bool clone = true)
+	{
+		assert(frame.data != NULL);
+
+		Mat cp = clone ? frame.clone() : frame;
+
+		assert(cp.type() == frame.type());
+		assert(cp.rows == frame.rows);
+		assert(cp.cols == frame.cols);
+
+		if (m_state.size() < m_depth)
+		{
+			m_state.push_back(cp);
+		}
+		else
+		{
+			m_state[m_insertionPoint] = cp;
+		}
+
+		++m_insertionPoint;
+
+		if (m_insertionPoint >= m_depth)
+			m_insertionPoint = 0;
+	}
+
+	void getFiltered(cv::Mat &result)
+	{
+		assert(result.data != NULL);
+		memset(result.data, 0, result.dataend - result.data);
+
+		double avgWeight = 1. / m_state.size();
+
+		for (size_t pos = 0; pos < m_state.size(); ++pos)
+		{
+			assert(m_state[pos].type() == result.type());
+			assert(m_state[pos].cols == result.cols);
+			assert(m_state[pos].rows == result.rows);
+
+			addWeighted(m_state[pos], avgWeight, result, 1.0, 0.0, result);
+		}
+	}
+
+private:
+	std::vector<cv::Mat> m_state;
+	unsigned int m_insertionPoint;
+	const size_t m_depth;
+
+};
+
+
 int main( int argc, char* argv[] )
 {
 	bool quit;
@@ -807,6 +995,8 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
+	AveragingFilter filter(5);
+
 	Stopwatch timer;
 	size_t frames = 0;
 
@@ -846,7 +1036,11 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		warpPerspective(depthMap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
+		filter.addFrame(depthMap);
+		Mat filteredDepthmap(depthMap.rows, depthMap.cols, depthMap.type());
+		filter.getFiltered(filteredDepthmap);
+
+		warpPerspective(filteredDepthmap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
 		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
 
