@@ -47,7 +47,7 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 		{
 			cerr << "Failed to grab" << endl;
 			cv::destroyWindow(CALIB_BGR_WND_2);
-			return 1;
+			return false;
 		}
 
 		Mat mat, mat2;
@@ -55,8 +55,8 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 		{
 			cerr << "Failed to retrieve" << endl;
 			cv::destroyWindow(CALIB_BGR_WND_2);
-			return 1;
-		}	
+			return false;
+		}
 	
 	
 		/// Convert it to gray
@@ -110,6 +110,7 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 		{
 			cerr << "Harris calibration aborted" << endl;
 			cv::destroyWindow(CALIB_BGR_WND_2);
+			cv::destroyWindow(CALIB_BGR_WND_3);
 			return false;
 		}
 	}

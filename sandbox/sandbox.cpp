@@ -126,6 +126,9 @@ bool getHomography(VideoCapture &capture, Mat &homography)
 
 
 	if (settings.calibrationMode == MANUAL) {
+		calibPoints.clear();
+		realPoints.clear();
+
 		if(!getManualCalibrationRectangleCorners(capture, calibPoints, realPoints))
 		{
 			cerr << "Manual calibration failed" << endl;
