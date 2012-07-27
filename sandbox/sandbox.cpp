@@ -39,6 +39,10 @@ struct Settings {
 
 	CalibrationModes calibrationMode;
 
+	// Averaging filter settings
+	size_t averagingDepth;
+	size_t averagingStepsize;
+
 	// Derived from settings
 	RECT monitorRect;
 
@@ -345,10 +349,6 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 			}
 		}
 		imshow("Harris", chImgNormScaled);
-
-
-
-
 
 		if (calibPoints.size() == 4) {
 			cerr << "Harris calibration done" << endl;
@@ -718,7 +718,7 @@ bool sandboxNormalizeAndColor(Mat &depthWarped, Mat& depthWarpedNormalized, uint
 bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 {
 	const char *keys =
-		"{f|fullscreen|true|If true fullscreen is used for output window}"
+		"{full|fullscreen|true|If true fullscreen is used for output window}"
 		"{m|monitor|0|Monitor to use for fullscreen}"
 		"{e|enumerate|false|Enumerate monitors and quit}"
 		"{d|depth|90|Maximum sand depth below plane in mm}"
@@ -727,6 +727,8 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
 		"{b|bgr|false|If true BGR color view is displayed}"
 		"{cal|calibration|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
+		"{avgd|averagingdepth|0|Averaging filter depth in frames. (0 = off)}"
+		"{avgs|averagingstepsize|1|Averaging filter step size.}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -753,7 +755,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		}
 	}
 
-	settings.fullscreen = clp.get<bool>("f");
+	settings.fullscreen = clp.get<bool>("full");
 	settings.monitor = clp.get<int>("m");
 	settings.displayBGR = clp.get<bool>("b");
 
@@ -775,7 +777,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 	settings.beamerXres = settings.monitorRect.right - settings.monitorRect.left;
 	settings.beamerYres = settings.monitorRect.bottom - settings.monitorRect.top;
-	settings.calibrationMode = (CalibrationModes)clp.get<int>("a");
+	settings.calibrationMode = (CalibrationModes)clp.get<int>("cal");
 
 	if (settings.calibrationMode < 0 || settings.calibrationMode >= CALIBRATION_MODE_MAX)
 	{
@@ -783,6 +785,9 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		quit = true;
 		return false;
 	}
+
+	settings.averagingDepth = static_cast<size_t>(std::max(0, clp.get<int>("avgd")));
+	settings.averagingStepsize = static_cast<size_t>(std::max(1, clp.get<int>("avgs")));
 
 	quit = false;
 	return true;
@@ -898,7 +903,14 @@ public:
 
 	void getFiltered(cv::Mat &result)
 	{
-		assert(result.data != NULL);
+		assert(m_state.size() > 0);
+
+		if(result.data == NULL)
+		{
+			// Reserve storage if not available
+			result = Mat(m_state[0].rows, m_state[0].cols, m_state[0].type());
+		}
+		
 		memset(result.data, 0, result.dataend - result.data);
 
 		double avgWeight = 1. / ceil((static_cast<double>(m_state.size()) / m_stepsize));
@@ -997,10 +1009,12 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
-	AveragingFilter filter(20,3);
+	AveragingFilter filter(settings.averagingDepth, settings.averagingStepsize);
 
 	Stopwatch timer;
 	size_t frames = 0;
+
+	Mat filteredDepthmap;
 
 	for (;;)
 	{
@@ -1038,9 +1052,16 @@ int main( int argc, char* argv[] )
 			return 1;
 		}
 
-		filter.addFrame(depthMap);
-		Mat filteredDepthmap(depthMap.rows, depthMap.cols, depthMap.type());
-		filter.getFiltered(filteredDepthmap);
+
+		if (settings.averagingDepth > 0)
+		{
+			filter.addFrame(depthMap);
+			filter.getFiltered(filteredDepthmap);
+		}
+		else
+		{
+			filteredDepthmap = depthMap;
+		}
 
 		warpPerspective(filteredDepthmap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
