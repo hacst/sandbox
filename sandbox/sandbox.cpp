@@ -726,7 +726,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
 		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
 		"{b|bgr|false|If true BGR color view is displayed}"
-		"{a|adjustment|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
+		"{cal|calibration|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -779,7 +779,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 	if (settings.calibrationMode < 0 || settings.calibrationMode >= CALIBRATION_MODE_MAX)
 	{
-		cerr << "Unknown adjustment mode " << settings.calibrationMode << endl;
+		cerr << "Unknown calibration mode " << settings.calibrationMode << endl;
 		quit = true;
 		return false;
 	}
