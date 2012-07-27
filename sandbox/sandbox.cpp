@@ -645,7 +645,7 @@ int main( int argc, char* argv[] )
 			{
 				if (!foundTreasure)
 				{
-					cout << "You found the treasure" << endl;
+					cout << "You found the treasure, press t to hide it again" << endl;
 					foundTreasure = true;
 					winningShuffle = 30;
 					if (!settings.treasureFile.empty())
