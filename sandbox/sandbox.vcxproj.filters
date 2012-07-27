@@ -1,36 +1,52 @@
 ﻿<?xml version="1.0" encoding="utf-8"?>
 <Project ToolsVersion="4.0" xmlns="http://schemas.microsoft.com/developer/msbuild/2003">
   <ItemGroup>
-    <Filter Include="Source Files">
+    <Filter Include="Filters">
+      <UniqueIdentifier>{aa7e20f8-293d-4dee-93c6-d5cbfe5f17e1}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Filters\Helpers">
+      <UniqueIdentifier>{436d593b-2d60-4972-a194-9d9f9ba9ae31}</UniqueIdentifier>
+    </Filter>
+    <Filter Include="Sandbox">
       <UniqueIdentifier>{4FC737F1-C7A5-4376-A066-2A32D752A2FF}</UniqueIdentifier>
       <Extensions>cpp;c;cc;cxx;def;odl;idl;hpj;bat;asm;asmx</Extensions>
     </Filter>
-    <Filter Include="Header Files">
-      <UniqueIdentifier>{93995380-89BD-4b04-88EB-625FBE52EBFB}</UniqueIdentifier>
-      <Extensions>h;hpp;hxx;hm;inl;inc;xsd</Extensions>
-    </Filter>
-    <Filter Include="Resource Files">
-      <UniqueIdentifier>{67DA6AB6-F800-4c08-8B7A-83BB121AAD01}</UniqueIdentifier>
-      <Extensions>rc;ico;cur;bmp;dlg;rc2;rct;bin;rgs;gif;jpg;jpeg;jpe;resx;tiff;tif;png;wav;mfcribbon-ms</Extensions>
+    <Filter Include="Utils">
+      <UniqueIdentifier>{604de40b-fc0f-4105-8c95-c0f9a2fd2318}</UniqueIdentifier>
     </Filter>
   </ItemGroup>
   <ItemGroup>
     <None Include="ReadMe.txt" />
   </ItemGroup>
   <ItemGroup>
-    <ClInclude Include="stdafx.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="AveragingFilter.h">
+      <Filter>Filters</Filter>
     </ClInclude>
-    <ClInclude Include="targetver.h">
-      <Filter>Header Files</Filter>
+    <ClInclude Include="MedianFilter.h">
+      <Filter>Filters</Filter>
+    </ClInclude>
+    <ClInclude Include="HistoryBuffer.h">
+      <Filter>Filters\Helpers</Filter>
+    </ClInclude>
+    <ClInclude Include="Fullscreen.h">
+      <Filter>Utils</Filter>
     </ClInclude>
   </ItemGroup>
   <ItemGroup>
-    <ClCompile Include="stdafx.cpp">
-      <Filter>Source Files</Filter>
-    </ClCompile>
     <ClCompile Include="sandbox.cpp">
-      <Filter>Source Files</Filter>
+      <Filter>Sandbox</Filter>
+    </ClCompile>
+    <ClCompile Include="AveragingFilter.cpp">
+      <Filter>Filters</Filter>
+    </ClCompile>
+    <ClCompile Include="MedianFilter.cpp">
+      <Filter>Filters</Filter>
+    </ClCompile>
+    <ClCompile Include="HistoryBuffer.cpp">
+      <Filter>Filters\Helpers</Filter>
+    </ClCompile>
+    <ClCompile Include="Fullscreen.cpp">
+      <Filter>Utils</Filter>
     </ClCompile>
   </ItemGroup>
 </Project>

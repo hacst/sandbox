@@ -1,6 +1,9 @@
-#include "stdafx.h"
 #define NOMINMAX
 
+#ifdef _WIN32
+#include <windows.h>
+#include <WinUser.h>
+#endif
 
 #include <opencv2/opencv.hpp>
 
@@ -10,11 +13,11 @@
 #include <vector>
 #include <algorithm>
 
-#ifdef _WIN32
-#include <windows.h>
-#endif
-
 #include <sstream>
+
+#include "Fullscreen.h"
+#include "AveragingFilter.h"
+#include "MedianFilter.h"
 
 using namespace cv;
 using namespace std;
@@ -59,119 +62,6 @@ struct Settings {
 	uint16_t boxBottomDistanceInMM;
 
 } settings;
-
-
-#ifdef _WIN32
-
-BOOL CALLBACK MonitorEnumProc(
-	__in  HMONITOR hMonitor,
-	__in  HDC hdcMonitor,
-	__in  LPRECT lprcMonitor,
-	__in  LPARAM dwData
-	)
-{
-	std::vector<RECT>* monitors = (std::vector<RECT>*)dwData;
-
-	monitors->push_back(*lprcMonitor);
-
-	return TRUE;
-}
-
-bool enumMonitors(std::vector<RECT> &rect)
-{
-	cout << "Enumerating monitors...";
-	if(EnumDisplayMonitors(NULL, NULL, MonitorEnumProc, (LPARAM) &rect) == 0)
-	{
-		cout << "failed" << endl;
-		return false;
-	}
-	cout << "ok" << endl;
-	return true;
-}
-
-bool fullScreen(RECT &monitor, const std::string windowName)
-{
-	const LONG width = monitor.right - monitor.left;
-	const LONG height = monitor.bottom - monitor.top;
-
-	HWND hwnd = FindWindowA(NULL, windowName.c_str());
-	if(hwnd == NULL) {
-		return false;
-	}
-
-	SetWindowLongPtr(hwnd, GWL_EXSTYLE, WS_EX_APPWINDOW | WS_EX_TOPMOST);
-	SetWindowLongPtr(hwnd, GWL_STYLE, WS_POPUP | WS_VISIBLE);
-
-	SetWindowPos(hwnd, HWND_TOPMOST, monitor.left, monitor.top, width, height, SWP_SHOWWINDOW);
-
-	ShowWindow(hwnd, SW_MAXIMIZE);
-
-	return true;
-}
-
-bool getMonitorRect(int monitor, RECT &monitorRect)
-{
-	std::vector<RECT> rect;
-	if(!enumMonitors(rect))
-		return false;
-
-	if (monitor < 0 || monitor >= (int)rect.size())
-		return false;
-
-	monitorRect = rect[monitor];
-
-	return true;
-}
-
-bool printMonitors()
-{
-	std::vector<RECT> monitors;
-	if(!enumMonitors(monitors))
-	{
-		return false;
-	}
-
-	cout << endl;
-
-	size_t num = 0;
-	for (std::vector<RECT>::iterator it = monitors.begin();
-		it != monitors.end();
-		++it)
-	{
-		RECT *monitor = &(*it);
-
-		cout << "Monitor " << num << ":" << endl;
-		cout << "Left/Right: " << monitor->left << " - " << monitor->right << endl;
-		cout << "Top/Bottom: " << monitor->top << " - " << monitor->bottom << endl << endl;
-
-		++num;
-	}
-
-	return true;
-}
-#else
-
-bool enumMonitors(std::vector<RECT> &rect) {
-	/* Not implemented for other platforms */
-	return false;
-}
-
-bool fullScreen(RECT &monitor, const std::string windowName) {
-	/* Not implemented for other platforms */
-	return false;
-}
-
-bool printMonitors() {
-	/* Not implemented for other platforms */ 
-	return false;
-}
-
-bool getMonitorRect(int monitor, RECT &monitorRect) {
-	/* Not implemented for other platforms */ 
-	return false;
-}
-
-#endif
 
 bool initializeCapture(VideoCapture &capture)
 {
@@ -894,144 +784,6 @@ void renderInfo(const std::string &window, Mat &infoMat, double fps)
 
 	imshow(window, infoMat);
 }
-
-class HistoryBuffer {
-public:
-	HistoryBuffer(const size_t depth)
-		: m_depth(depth)
-		, m_insertionPoint(0)
-	{
-
-	}
-
-	void addFrame(cv::Mat &frame, bool clone = true)
-	{
-		assert(frame.data != NULL);
-
-		Mat cp = clone ? frame.clone() : frame;
-
-		assert(cp.type() == frame.type());
-		assert(cp.rows == frame.rows);
-		assert(cp.cols == frame.cols);
-
-		if (m_state.size() < m_depth)
-		{
-			m_state.push_back(cp);
-		}
-		else
-		{
-			m_state[m_insertionPoint] = cp;
-		}
-
-		++m_insertionPoint;
-
-		if (m_insertionPoint >= m_depth)
-			m_insertionPoint = 0;
-	}
-
-protected:
-	std::vector<cv::Mat>& getHistory()
-	{
-		return m_state;
-	}
-
-private:
-	std::vector<cv::Mat> m_state;
-	unsigned int m_insertionPoint;
-	const size_t m_depth;
-};
-
-class AveragingFilter : public HistoryBuffer {
-public:
-	AveragingFilter(const size_t depth, const size_t stepsize = 1)
-		: HistoryBuffer(depth)
-		, m_stepsize(stepsize)
-	{
-
-	}
-
-	void getFiltered(cv::Mat &result)
-	{
-		std::vector<cv::Mat>& history = getHistory();
-
-		assert(history.size() > 0);
-
-		if(result.data == NULL)
-		{
-			// Reserve storage if not available
-			result = Mat(history[0].rows, history[0].cols, history[0].type());
-		}
-		
-		memset(result.data, 0, result.dataend - result.data);
-
-		double avgWeight = 1. / ceil((static_cast<double>(history.size()) / m_stepsize));
-
-		for (size_t pos = 0; pos < history.size(); pos += m_stepsize)
-		{
-			assert(history[pos].type() == result.type());
-			assert(history[pos].cols == result.cols);
-			assert(history[pos].rows == result.rows);
-
-			addWeighted(history[pos], avgWeight, result, 1.0, 0.0, result);
-		}
-	}
-
-private:
-	const size_t m_stepsize;
-
-};
-
-class MedianFilter : public HistoryBuffer {
-public:
-	MedianFilter(const size_t depth, const size_t stepsize)
-		: HistoryBuffer(depth)
-		, m_stepsize(stepsize) 
-	{
-	}
-
-	template <typename T>
-	void getFiltered(cv::Mat &result)
-	{
-		std::vector<cv::Mat>& history = getHistory();
-
-		assert(history.size() > 0);
-
-		if(result.data == NULL)
-		{
-			// Reserve storage if not available
-			result = Mat(history[0].rows, history[0].cols, history[0].type());
-		}
-
-		const size_t ROWS = result.rows;
-		const size_t COLS = result.cols;
-
-		std::vector<T> buffer;
-		buffer.resize(static_cast<size_t>(ceil((static_cast<double>(history.size()) / m_stepsize))));
-		size_t n = 0;
-		const size_t MIDDLEIDX = buffer.size() / 2;
-		for (size_t row = 0; row < ROWS; ++row)
-		{
-			for (size_t col = 0; col < COLS; ++col)
-			{
-				n = 0;
-				for (size_t pos = 0; pos < history.size(); pos += m_stepsize)
-				{
-					buffer[n] = history[pos].at<T>(Point(col, row));
-					++n;
-				}
-
-				std::sort(buffer.begin(), buffer.end());
-
-				result.at<T>(Point(col, row)) = buffer[MIDDLEIDX];
-			}
-		}
-	}
-
-private:
-	const size_t m_stepsize;
-
-};
-
 
 int main( int argc, char* argv[] )
 {
