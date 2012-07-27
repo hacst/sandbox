@@ -245,7 +245,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{d|depth|90|Maximum sand depth below plane in mm}"
 		"{t|top|200|Maximum sand height above plane in mm}"
 		"{g|ground|-1|Distance of the sand plane to the sensor. (-1 for automatic calibration.)}"
-		"{c|colors|NONE|Colorband to use for coloring. NONE for greyscale}"
+		"{c|colors|NONE|Prefix for colorbands to use for coloring (-c col -> col0.png - col9.png). NONE for greyscale}"
 		"{b|bgr|false|If true BGR color view is displayed}"
 		"{cal|calibration|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
 		"{avgd|averagingdepth|0|Averaging filter depth in frames. (0 = off)}"
@@ -467,14 +467,22 @@ int main( int argc, char* argv[] )
 	
 	if (quit)
 		return 0;
-	
-	Mat colors;
-	if (!loadColorFile(settings.colorFile, colors))
-		return 1;
 
-	if (colors.data == NULL)
+	vector<Mat> colors;
+	for (size_t i = 0; i < 10; ++i)
+	{
+		stringstream ss;
+		ss << settings.colorFile << i << ".png";
+
+		Mat cf;
+		if(loadColorFile(ss.str(), cf))
+			colors.push_back(cf);
+	}
+
+	if (colors.empty())
 	{
 		cout << "Displaying continous grey scale" << endl;
+		colors.push_back(Mat());
 	}
 
 	VideoCapture capture;
@@ -547,6 +555,8 @@ int main( int argc, char* argv[] )
 	int treasureY;
 	bool foundTreasure = false;
 
+	size_t currentColor = 0;
+
 	if (!settings.treasureFile.empty())
 	{
 		treasure = imread(settings.treasureFile);
@@ -616,7 +626,7 @@ int main( int argc, char* argv[] )
 
 		warpPerspective(filteredDepthmap, depthWarped, homography, Size(settings.beamerXres, settings.beamerYres));
 
-		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors);
+		sandboxNormalizeAndColor(depthWarped, depthWarpedNormalized, settings.boxBottomDistanceInMM, colors[currentColor]);
 
 		if (!settings.treasureFile.empty())
 		{
@@ -635,7 +645,7 @@ int main( int argc, char* argv[] )
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
 
-		int key = waitKey(1);
+		const int key = waitKey(1);  // Needed for event processing in OpenCV
 		if (key == 't')
 		{
 			treasureX = rand() % (settings.beamerXres - treasure.cols);
@@ -644,8 +654,19 @@ int main( int argc, char* argv[] )
 
 			foundTreasure = false;
 		}
-		if( key == 27 ) // Needed for event processing in OpenCV
+		else if (key >= '0' && key <= '9')
+		{
+			size_t num = key - '0';
+			if (num < colors.size())
+			{
+				cout << "Switching to color profile " << num << endl;
+				currentColor = num;
+			}
+		}
+		else if( key == 27 )
+		{
 			break;
+		}
 
 		++frames;
 	}
