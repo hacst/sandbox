@@ -43,6 +43,10 @@ struct Settings {
 	size_t averagingDepth;
 	size_t averagingStepsize;
 
+	// Median filter settings
+	size_t medianDepth;
+	size_t medianStepsize;
+
 	// Derived from settings
 	RECT monitorRect;
 
@@ -729,6 +733,8 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{cal|calibration|1|Calibration mode. (0 for manual, 1 for hough circles, 2 for harris corners)}"
 		"{avgd|averagingdepth|0|Averaging filter depth in frames. (0 = off)}"
 		"{avgs|averagingstepsize|1|Averaging filter step size.}"
+		"{medd|mediandepth|0|Median filter depth in frames. (0 = off)}"
+		"{meds|medianstepsize|1|Median filter step size.}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -788,6 +794,29 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 
 	settings.averagingDepth = static_cast<size_t>(std::max(0, clp.get<int>("avgd")));
 	settings.averagingStepsize = static_cast<size_t>(std::max(1, clp.get<int>("avgs")));
+
+	if (settings.averagingDepth > 0)
+	{
+		cout << "Using average filter with depth " << settings.averagingDepth
+			 << " and stepsize " << settings.averagingStepsize << endl;
+	}
+
+	settings.medianDepth = static_cast<size_t>(std::max(0, clp.get<int>("medd")));
+	settings.medianStepsize = static_cast<size_t>(std::max(1, clp.get<int>("meds")));
+
+	if (settings.medianDepth > 0)
+	{
+		if (settings.averagingDepth > 0)
+		{
+			cout << "WARNING: Median and averaging filter cannot be used at the same time. Disabled median." << endl;
+			settings.medianDepth = 0;
+		}
+		else
+		{
+			cout << "Using median filter with depth " << settings.medianDepth
+				 << " and stepsize " << settings.medianStepsize << endl;
+		}
+	}
 
 	quit = false;
 	return true;
@@ -866,12 +895,11 @@ void renderInfo(const std::string &window, Mat &infoMat, double fps)
 	imshow(window, infoMat);
 }
 
-class AveragingFilter {
+class HistoryBuffer {
 public:
-	AveragingFilter(const size_t depth, const size_t stepsize = 1)
+	HistoryBuffer(const size_t depth)
 		: m_depth(depth)
 		, m_insertionPoint(0)
-		, m_stepsize(stepsize)
 	{
 
 	}
@@ -901,34 +929,105 @@ public:
 			m_insertionPoint = 0;
 	}
 
-	void getFiltered(cv::Mat &result)
+protected:
+	std::vector<cv::Mat>& getHistory()
 	{
-		assert(m_state.size() > 0);
-
-		if(result.data == NULL)
-		{
-			// Reserve storage if not available
-			result = Mat(m_state[0].rows, m_state[0].cols, m_state[0].type());
-		}
-		
-		memset(result.data, 0, result.dataend - result.data);
-
-		double avgWeight = 1. / ceil((static_cast<double>(m_state.size()) / m_stepsize));
-
-		for (size_t pos = 0; pos < m_state.size(); pos += m_stepsize)
-		{
-			assert(m_state[pos].type() == result.type());
-			assert(m_state[pos].cols == result.cols);
-			assert(m_state[pos].rows == result.rows);
-
-			addWeighted(m_state[pos], avgWeight, result, 1.0, 0.0, result);
-		}
+		return m_state;
 	}
 
 private:
 	std::vector<cv::Mat> m_state;
 	unsigned int m_insertionPoint;
 	const size_t m_depth;
+};
+
+class AveragingFilter : public HistoryBuffer {
+public:
+	AveragingFilter(const size_t depth, const size_t stepsize = 1)
+		: HistoryBuffer(depth)
+		, m_stepsize(stepsize)
+	{
+
+	}
+
+	void getFiltered(cv::Mat &result)
+	{
+		std::vector<cv::Mat>& history = getHistory();
+
+		assert(history.size() > 0);
+
+		if(result.data == NULL)
+		{
+			// Reserve storage if not available
+			result = Mat(history[0].rows, history[0].cols, history[0].type());
+		}
+		
+		memset(result.data, 0, result.dataend - result.data);
+
+		double avgWeight = 1. / ceil((static_cast<double>(history.size()) / m_stepsize));
+
+		for (size_t pos = 0; pos < history.size(); pos += m_stepsize)
+		{
+			assert(history[pos].type() == result.type());
+			assert(history[pos].cols == result.cols);
+			assert(history[pos].rows == result.rows);
+
+			addWeighted(history[pos], avgWeight, result, 1.0, 0.0, result);
+		}
+	}
+
+private:
+	const size_t m_stepsize;
+
+};
+
+class MedianFilter : public HistoryBuffer {
+public:
+	MedianFilter(const size_t depth, const size_t stepsize)
+		: HistoryBuffer(depth)
+		, m_stepsize(stepsize) 
+	{
+	}
+
+	template <typename T>
+	void getFiltered(cv::Mat &result)
+	{
+		std::vector<cv::Mat>& history = getHistory();
+
+		assert(history.size() > 0);
+
+		if(result.data == NULL)
+		{
+			// Reserve storage if not available
+			result = Mat(history[0].rows, history[0].cols, history[0].type());
+		}
+
+		const size_t ROWS = result.rows;
+		const size_t COLS = result.cols;
+
+		std::vector<T> buffer;
+		buffer.resize(static_cast<size_t>(ceil((static_cast<double>(history.size()) / m_stepsize))));
+		size_t n = 0;
+		const size_t MIDDLEIDX = buffer.size() / 2;
+		for (size_t row = 0; row < ROWS; ++row)
+		{
+			for (size_t col = 0; col < COLS; ++col)
+			{
+				n = 0;
+				for (size_t pos = 0; pos < history.size(); pos += m_stepsize)
+				{
+					buffer[n] = history[pos].at<T>(Point(col, row));
+					++n;
+				}
+
+				std::sort(buffer.begin(), buffer.end());
+
+				result.at<T>(Point(col, row)) = buffer[MIDDLEIDX];
+			}
+		}
+	}
+
+private:
 	const size_t m_stepsize;
 
 };
@@ -1009,7 +1108,8 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
-	AveragingFilter filter(settings.averagingDepth, settings.averagingStepsize);
+	AveragingFilter avgFilter(settings.averagingDepth, settings.averagingStepsize);
+	MedianFilter medFilter(settings.medianDepth, settings.medianStepsize);
 
 	Stopwatch timer;
 	size_t frames = 0;
@@ -1055,8 +1155,13 @@ int main( int argc, char* argv[] )
 
 		if (settings.averagingDepth > 0)
 		{
-			filter.addFrame(depthMap);
-			filter.getFiltered(filteredDepthmap);
+			avgFilter.addFrame(depthMap);
+			avgFilter.getFiltered(filteredDepthmap);
+		}
+		else if (settings.medianDepth > 0)
+		{
+			medFilter.addFrame(depthMap);
+			medFilter.getFiltered<uint16_t>(filteredDepthmap);
 		}
 		else
 		{
