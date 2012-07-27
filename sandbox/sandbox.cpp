@@ -22,6 +22,7 @@
 #include "HarrisCornerDetection.h"
 #include "HoughCornerDetection.h"
 #include "ManualCornerDetection.h"
+#include "Sound.h"
 
 using namespace cv;
 using namespace std;
@@ -251,7 +252,7 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 		"{avgs|averagingstepsize|1|Averaging filter step size.}"
 		"{medd|mediandepth|0|Median filter depth in frames. (0 = off)}"
 		"{meds|medianstepsize|1|Median filter step size.}"
-		"{east|eastereggshhhh|NONE|Nothing really, doesn't take a path to a small rgb png either"
+		"{east|eastereggshhhh|NONE|Nothing really, doesn't take the name without extension for a small png and a wav either}"
 		"{h|help|false|Print help}";
 
 	CommandLineParser clp(argc, argv, keys);
@@ -290,7 +291,16 @@ bool parseSettingsFromCommandline(int argc, char **argv, bool &quit)
 	if (settings.colorFile == "NONE") settings.colorFile.clear(); // No color file
 
 	settings.treasureFile = clp.get<std::string>("east");
-	if (settings.treasureFile == "NONE") settings.treasureFile.clear(); // No treasure file
+	if (settings.treasureFile == "NONE")
+	{
+		settings.treasureFile.clear(); // No treasure file
+	}
+	else
+	{
+		settings.treasureSound = settings.treasureFile + ".wav";
+		settings.treasureFile = settings.treasureFile + ".png";
+	}
+	
 
 
 	if (!getMonitorRect(settings.monitor, settings.monitorRect))
@@ -535,6 +545,8 @@ int main( int argc, char* argv[] )
 	Mat treasure;
 	int treasureX;
 	int treasureY;
+	bool foundTreasure = false;
+
 	if (!settings.treasureFile.empty())
 	{
 		treasure = imread(settings.treasureFile);
@@ -610,7 +622,14 @@ int main( int argc, char* argv[] )
 		{
 			if(huntTreasure(depthWarped, treasure, depthWarpedNormalized, treasureX, treasureY))
 			{
-				cout << "You found the treasure" << endl;
+				if (!foundTreasure)
+				{
+					cout << "You found the treasure" << endl;
+					foundTreasure = true;
+
+					if (!settings.treasureFile.empty())
+						doPlaySound(settings.treasureSound);
+				}
 			}
 		}
 
@@ -619,11 +638,11 @@ int main( int argc, char* argv[] )
 		int key = waitKey(1);
 		if (key == 't')
 		{
-					treasureX = rand() % (settings.beamerXres - treasure.cols);
-		treasureY = rand() % (settings.beamerYres - treasure.rows);
+			treasureX = rand() % (settings.beamerXres - treasure.cols);
+			treasureY = rand() % (settings.beamerYres - treasure.rows);
+			cout << "Find the treasure " << treasureX << " " << treasureY << endl;
 
-		cout << "Find the treasure " << treasureX << " " << treasureY << endl;
-
+			foundTreasure = false;
 		}
 		if( key == 27 ) // Needed for event processing in OpenCV
 			break;

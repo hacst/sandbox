@@ -61,7 +61,7 @@
     <Link>
       <SubSystem>Console</SubSystem>
       <GenerateDebugInformation>true</GenerateDebugInformation>
-      <AdditionalDependencies>opencv_highgui240d.lib;opencv_core240d.lib;opencv_imgproc240d.lib;opencv_calib3d240d.lib;opencv_video240d.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_highgui240d.lib;opencv_core240d.lib;opencv_imgproc240d.lib;opencv_calib3d240d.lib;opencv_video240d.lib;Winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemDefinitionGroup Condition="'$(Configuration)|$(Platform)'=='Release|Win32'">
@@ -80,7 +80,7 @@
       <GenerateDebugInformation>true</GenerateDebugInformation>
       <EnableCOMDATFolding>true</EnableCOMDATFolding>
       <OptimizeReferences>true</OptimizeReferences>
-      <AdditionalDependencies>opencv_highgui240.lib;opencv_core240.lib;opencv_imgproc240.lib;opencv_calib3d240.lib;opencv_video240.lib;%(AdditionalDependencies)</AdditionalDependencies>
+      <AdditionalDependencies>opencv_highgui240.lib;opencv_core240.lib;opencv_imgproc240.lib;opencv_calib3d240.lib;opencv_video240.lib;Winmm.lib;%(AdditionalDependencies)</AdditionalDependencies>
     </Link>
   </ItemDefinitionGroup>
   <ItemGroup>
@@ -95,6 +95,7 @@
     <ClInclude Include="ManualCornerDetection.h" />
     <ClInclude Include="MedianFilter.h" />
     <ClInclude Include="Settings.h" />
+    <ClInclude Include="Sound.h" />
   </ItemGroup>
   <ItemGroup>
     <ClCompile Include="AveragingFilter.cpp" />
@@ -106,6 +107,7 @@
     <ClCompile Include="MedianFilter.cpp" />
     <ClCompile Include="sandbox.cpp" />
     <ClCompile Include="Settings.cpp" />
+    <ClCompile Include="Sound.cpp" />
   </ItemGroup>
   <Import Project="$(VCTargetsPath)\Microsoft.Cpp.targets" />
   <ImportGroup Label="ExtensionTargets">
