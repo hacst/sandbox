@@ -863,9 +863,10 @@ void renderInfo(const std::string &window, Mat &infoMat, double fps)
 
 class AveragingFilter {
 public:
-	AveragingFilter(const size_t depth)
+	AveragingFilter(const size_t depth, const size_t stepsize = 1)
 		: m_depth(depth)
 		, m_insertionPoint(0)
+		, m_stepsize(stepsize)
 	{
 
 	}
@@ -900,9 +901,9 @@ public:
 		assert(result.data != NULL);
 		memset(result.data, 0, result.dataend - result.data);
 
-		double avgWeight = 1. / m_state.size();
+		double avgWeight = 1. / ceil((static_cast<double>(m_state.size()) / m_stepsize));
 
-		for (size_t pos = 0; pos < m_state.size(); ++pos)
+		for (size_t pos = 0; pos < m_state.size(); pos += m_stepsize)
 		{
 			assert(m_state[pos].type() == result.type());
 			assert(m_state[pos].cols == result.cols);
@@ -916,6 +917,7 @@ private:
 	std::vector<cv::Mat> m_state;
 	unsigned int m_insertionPoint;
 	const size_t m_depth;
+	const size_t m_stepsize;
 
 };
 
@@ -995,7 +997,7 @@ int main( int argc, char* argv[] )
 	Mat bgrImage;
 	Mat bgrWarped;
 
-	AveragingFilter filter(5);
+	AveragingFilter filter(20,3);
 
 	Stopwatch timer;
 	size_t frames = 0;
