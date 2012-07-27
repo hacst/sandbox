@@ -360,7 +360,7 @@ bool loadColorFile(const std::string &colorFile, Mat &colors)
 		return true;
 	}
 
-	cout << "Loading color file " << colorFile << "..." << endl;
+	cout << "Loading color file " << colorFile << "...";
 
 	colors = cv::imread(colorFile, 1);
 	if (colors.data == NULL) {
@@ -370,7 +370,7 @@ bool loadColorFile(const std::string &colorFile, Mat &colors)
 
 	if(colors.rows != 1)
 	{
-		cout << "The colorband must only have one row" << endl;
+		cout << "failed" << endl << "The colorband must only have one row" << endl;
 		return false;
 	}
 
@@ -378,10 +378,11 @@ bool loadColorFile(const std::string &colorFile, Mat &colors)
 	const uint16_t fullRange = settings.maxSandDepthInMM + settings.maxSandHeightInMM;
 	if (colors.cols != fullRange)
 	{
-		cout << "For given sand depth and height limits colorband has to cover " << fullRange << "mm, covers " << colors.rows << "mm (px) as columns." << endl;
+		cout << "failed" << endl << "For given sand depth and height limits colorband has to cover " << fullRange << "mm, covers " << colors.rows << "mm (px) as columns." << endl;
 		return false;
 	}
 	
+	cout << "ok" << endl;
 	return true;
 }
 
@@ -457,6 +458,14 @@ bool huntTreasure(Mat &depthMap, Mat &treasure, Mat &display, int left, int top,
 
 	const double allPx = treasure.cols * treasure.rows;
 	return (foundPx / allPx >= threshold);
+}
+
+void invertMat(Mat &mat)
+{
+	for (uchar *cur = mat.data; cur < mat.dataend; ++cur)
+	{
+		*cur = 255 - *cur;
+	}
 }
 
 int main( int argc, char* argv[] )
@@ -554,6 +563,7 @@ int main( int argc, char* argv[] )
 	int treasureX;
 	int treasureY;
 	bool foundTreasure = false;
+	size_t winningShuffle = 0;
 
 	size_t currentColor = 0;
 
@@ -569,7 +579,8 @@ int main( int argc, char* argv[] )
 		treasureX = rand() % (settings.beamerXres - treasure.cols);
 		treasureY = rand() % (settings.beamerYres - treasure.rows);
 
-		cout << "Find the treasure " << treasureX << " " << treasureY << endl;
+		cout << "Find the treasure " << endl;
+		// DEBUGGING ONLY cout << treasureX << " " << treasureY << endl;
 	}
 
 	for (;;)
@@ -636,11 +647,20 @@ int main( int argc, char* argv[] )
 				{
 					cout << "You found the treasure" << endl;
 					foundTreasure = true;
-
+					winningShuffle = 30;
 					if (!settings.treasureFile.empty())
 						doPlaySound(settings.treasureSound);
 				}
 			}
+		}
+
+		if (winningShuffle > 0)
+		{
+			if (winningShuffle % 10 < 5)
+			{
+				invertMat(depthWarpedNormalized);
+			}
+			--winningShuffle;
 		}
 
 		imshow(SAND_NORMALIZED, depthWarpedNormalized);
@@ -650,7 +670,8 @@ int main( int argc, char* argv[] )
 		{
 			treasureX = rand() % (settings.beamerXres - treasure.cols);
 			treasureY = rand() % (settings.beamerYres - treasure.rows);
-			cout << "Find the treasure " << treasureX << " " << treasureY << endl;
+			cout << "Find the treasure ";
+			// DEBUGGING ONLY!!!! // cout << treasureX << " " << treasureY << endl;
 
 			foundTreasure = false;
 		}

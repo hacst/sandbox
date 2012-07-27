@@ -9,6 +9,7 @@ using namespace std;
 bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Point2f> &calibPoints, vector<Point2f> &realPoints){
 	calibPoints.clear();
 	const std::string CALIB_BGR_WND_2 = "Harris Calibration";
+	const std::string CALIB_BGR_WND_3 = "Harris Extra";
 	namedWindow(CALIB_BGR_WND_2);
 
 
@@ -97,7 +98,7 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 				}
 			}
 		}
-		imshow("Harris", chImgNormScaled);
+		imshow(CALIB_BGR_WND_3, chImgNormScaled);
 
 		if (calibPoints.size() == 4) {
 			cerr << "Harris calibration done" << endl;
@@ -112,6 +113,9 @@ bool getAutoCalibrationRectangleCornersHarris(VideoCapture &capture, vector<Poin
 			return false;
 		}
 	}
+
+	waitKey(2000);
+	cv::destroyWindow(CALIB_BGR_WND_3);
 
 	cv::destroyWindow(CALIB_BGR_WND_2);
 	return true;
